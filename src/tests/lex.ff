@@ -1,0 +1,4 @@
+Format "nwge mesh"
+Namespace "nwge_mesh"
+
+"Magic" bytes = "NWGEMSH"

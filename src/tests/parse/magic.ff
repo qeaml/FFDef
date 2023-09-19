@@ -1,0 +1,4 @@
+Format "test"
+Namespace "testfile"
+
+"Magic" bytes = "TEST"

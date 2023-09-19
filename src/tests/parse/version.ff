@@ -1,0 +1,5 @@
+Format "test v2"
+Namespace "test_v2"
+
+"Magic" bytes = "TESTFIL"
+"Version" byte = 2
