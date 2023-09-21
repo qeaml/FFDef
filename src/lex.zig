@@ -91,6 +91,7 @@ pub const Token = struct {
 pub fn all(allocator: std.mem.Allocator, filename: []const u8, source: []const u8) ![]Token {
     var state = State.new(filename, source);
     var tokens = std.ArrayList(Token).init(allocator);
+    errdefer tokens.deinit();
 
     while (true) {
         const maybeToken = try state.next();
