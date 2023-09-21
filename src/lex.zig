@@ -101,7 +101,7 @@ pub fn all(allocator: std.mem.Allocator, filename: []const u8, source: []const u
         }
     }
 
-    return tokens.items;
+    return tokens.toOwnedSlice();
 }
 
 const State = struct {

@@ -1,0 +1,10 @@
+Format "test v3"
+Namespace "test_v3"
+
+"Magic" bytes = "TESTFIL"
+"Version" byte = 3
+
+"A" signed byte
+"B" word
+"C" int
+"D" unsigned long

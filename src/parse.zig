@@ -10,7 +10,7 @@ pub const Error = error{
     ExpectedNamespaceString, // expected string for Namespace directive
     ExpectedFieldOrDirective, // expected a field or a directive
     ExpectedTypename, // expected a type name
-    ExpectedsignedOrUnsigned, // expected either 'signed' or 'unsigned'
+    ExpectedSignedOrUnsigned, // expected either 'signed' or 'unsigned'
     ExpectedConstraintValue, // expected a value after constraint operator
     FieldConstraintNotInteger, // expected an integer value for field constraint
     ArrayComparativeConstraint, // only '=' and '!=' constraints are allowed for array fields
@@ -19,13 +19,14 @@ pub const Error = error{
 
 pub const Datatype = enum {
     Byte,
-    Word,
-    DWord,
-    QWord,
+    Short,
+    Int,
+    Long,
 };
 
 pub const QualType = struct {
     datatype: Datatype,
+    isSigned: bool = false,
     isArray: bool = false,
     arraySizeInferred: bool = false,
     arraySizeKnown: bool = false,
@@ -107,7 +108,9 @@ const State = struct {
     }
 
     fn parseQualType(self: Self) !QualType {
-        const primTok = self.gettok();
+        const signedOverride = try self.parseSignednessModifier();
+
+        var primTok = self.gettok();
         if (primTok == null) {
             return Error.ExpectedTypename;
         }
@@ -119,38 +122,66 @@ const State = struct {
             .Typename => |t| switch (t) {
                 .Byte => {
                     qt.datatype = .Byte;
+                    qt.isSigned = signedOverride orelse false;
                 },
                 .Bytes => {
                     qt.datatype = .Byte;
+                    qt.isSigned = signedOverride orelse false;
                     qt.isArray = true;
                     qt.arraySizeInferred = true;
                 },
                 .Char => {
                     qt.datatype = .Byte;
+                    qt.isSigned = signedOverride orelse false;
                 },
                 .Word => {
-                    qt.datatype = .Word;
+                    qt.datatype = .Short;
+                    qt.isSigned = signedOverride orelse false;
                 },
                 .Short => {
-                    qt.datatype = .Word;
+                    qt.datatype = .Short;
+                    qt.isSigned = signedOverride orelse true;
                 },
                 .Dword => {
-                    qt.datatype = .DWord;
+                    qt.datatype = .Int;
+                    qt.isSigned = signedOverride orelse false;
                 },
                 .Int => {
-                    qt.datatype = .DWord;
+                    qt.datatype = .Int;
+                    qt.isSigned = signedOverride orelse true;
                 },
                 .Qword => {
-                    qt.datatype = .QWord;
+                    qt.datatype = .Long;
+                    qt.isSigned = signedOverride orelse false;
                 },
                 .Long => {
-                    qt.datatype = .QWord;
+                    qt.datatype = .Long;
+                    qt.isSigned = signedOverride orelse true;
                 },
             },
             else => return Error.ExpectedTypename,
         }
 
         return qt;
+    }
+
+    fn parseSignednessModifier(self: Self) !?bool {
+        const tok = self.gettok();
+        if (tok == null) {
+            return Error.ExpectedSignedOrUnsigned;
+        }
+
+        switch (tok.?.data) {
+            .Modifier => |m| return switch (m) {
+                .Signed => true,
+                .Unsigned => false,
+                else => return Error.ExpectedSignedOrUnsigned,
+            },
+            else => {
+                self.offset -= 1;
+                return null;
+            },
+        }
     }
 
     fn parseConstraint(self: Self, qualtype: *QualType, op: lex.Operator) !Constraint {
@@ -320,4 +351,60 @@ test "version" {
     try std.testing.expect(version.constraint != null);
     try std.testing.expectEqual(lex.Operator.Equal, version.constraint.?.op);
     try std.testing.expectEqual(@as(isize, 2), version.constraint.?.val.int);
+}
+
+test "ints" {
+    const format = try all(std.testing.allocator, "test", @embedFile("tests/parse/ints.ff"));
+    defer format.deinit();
+
+    try std.testing.expectEqualStrings("test v3", format.name);
+    try std.testing.expectEqualStrings("test_v3", format.namespace);
+
+    try std.testing.expectEqual(@as(usize, 6), format.fields.len);
+
+    const magic = format.fields[0];
+    try std.testing.expectEqualStrings("Magic", magic.name);
+    try std.testing.expectEqual(Datatype.Byte, magic.typ.datatype);
+    try std.testing.expect(magic.typ.isArray);
+    try std.testing.expect(magic.typ.arraySizeKnown);
+    try std.testing.expectEqual(@as(usize, 7), magic.typ.arrayExtent.size);
+    try std.testing.expect(magic.constraint != null);
+    try std.testing.expectEqual(lex.Operator.Equal, magic.constraint.?.op);
+    try std.testing.expectEqualStrings("TESTFIL", magic.constraint.?.val.str);
+
+    const version = format.fields[1];
+    try std.testing.expectEqualStrings("Version", version.name);
+    try std.testing.expectEqual(Datatype.Byte, version.typ.datatype);
+    try std.testing.expect(!version.typ.isArray);
+    try std.testing.expect(version.constraint != null);
+    try std.testing.expectEqual(lex.Operator.Equal, version.constraint.?.op);
+    try std.testing.expectEqual(@as(isize, 3), version.constraint.?.val.int);
+
+    const a = format.fields[2];
+    try std.testing.expectEqualStrings("A", a.name);
+    try std.testing.expect(!a.typ.isArray);
+    try std.testing.expect(a.constraint == null);
+    try std.testing.expectEqual(a.typ.datatype, .Byte);
+    try std.testing.expect(a.typ.isSigned);
+
+    const b = format.fields[3];
+    try std.testing.expectEqualStrings("B", b.name);
+    try std.testing.expect(!b.typ.isArray);
+    try std.testing.expect(b.constraint == null);
+    try std.testing.expectEqual(b.typ.datatype, .Short);
+    try std.testing.expect(!b.typ.isSigned);
+
+    const c = format.fields[4];
+    try std.testing.expectEqualStrings("C", c.name);
+    try std.testing.expect(!c.typ.isArray);
+    try std.testing.expect(c.constraint == null);
+    try std.testing.expectEqual(c.typ.datatype, .Int);
+    try std.testing.expect(c.typ.isSigned);
+
+    const d = format.fields[5];
+    try std.testing.expectEqualStrings("D", d.name);
+    try std.testing.expect(!d.typ.isArray);
+    try std.testing.expect(d.constraint == null);
+    try std.testing.expectEqual(d.typ.datatype, .Long);
+    try std.testing.expect(!d.typ.isSigned);
 }
