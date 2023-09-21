@@ -15,6 +15,10 @@ pub const Error = error{
     FieldConstraintNotInteger, // expected an integer value for field constraint
     ArrayComparativeConstraint, // only '=' and '!=' constraints are allowed for array fields
     ConstrainedArrayNotString, // only byte arrays may be constrained
+    ExpectedArraySize, // expected array size
+    InvalidArraySize, // array size must be greater than 1
+    ArraySizeNotClosed, // expected ')' to close array extent
+    ArrayOfArrays, // array of arrays not yet supported
 };
 
 pub const Datatype = enum {
@@ -28,10 +32,9 @@ pub const QualType = struct {
     datatype: Datatype,
     isSigned: bool = false,
     isArray: bool = false,
-    arraySizeInferred: bool = false,
     arraySizeKnown: bool = false,
-    arrayExtent: union {
-        typ: Datatype,
+    arraySize: union {
+        ref: []const u8,
         size: usize,
     } = .{ .size = 0 },
 };
@@ -128,7 +131,6 @@ const State = struct {
                     qt.datatype = .Byte;
                     qt.isSigned = signedOverride orelse false;
                     qt.isArray = true;
-                    qt.arraySizeInferred = true;
                 },
                 .Char => {
                     qt.datatype = .Byte;
@@ -162,7 +164,65 @@ const State = struct {
             else => return Error.ExpectedTypename,
         }
 
+        try self.parseArrayModifier(&qt);
+
         return qt;
+    }
+
+    fn parseArrayModifier(self: Self, qualtype: *QualType) !void {
+        const mod = self.gettok();
+        if (mod == null) {
+            return;
+        }
+
+        switch (mod.?.data) {
+            .Modifier => |m| switch (m) {
+                .Array => {
+                    if (qualtype.isArray) {
+                        return Error.ArrayOfArrays;
+                    }
+                    qualtype.isArray = true;
+                },
+                else => {
+                    self.offset -= 1;
+                    return;
+                },
+            },
+            else => {
+                self.offset -= 1;
+                return;
+            },
+        }
+
+        const leftParen = self.gettok();
+        if (leftParen == null) {
+            return Error.ExpectedArraySize;
+        }
+
+        const extent = self.gettok();
+        if (extent == null) {
+            return Error.ExpectedArraySize;
+        }
+
+        switch (extent.?.data) {
+            .String => |s| {
+                qualtype.arraySizeKnown = false;
+                qualtype.arraySize = .{ .ref = s };
+            },
+            .Integer => |i| {
+                if (i <= 1) {
+                    return Error.InvalidArraySize;
+                }
+                qualtype.arraySizeKnown = true;
+                qualtype.arraySize = .{ .size = @intCast(usize, i) };
+            },
+            else => return Error.InvalidArraySize,
+        }
+
+        const rightParen = self.gettok();
+        if (rightParen == null) {
+            return Error.ArraySizeNotClosed;
+        }
     }
 
     fn parseSignednessModifier(self: Self) !?bool {
@@ -203,9 +263,9 @@ const State = struct {
                 else => return Error.ConstrainedArrayNotString,
             };
 
-            if (qualtype.arraySizeInferred and op == lex.Operator.Equal) {
+            if (!qualtype.arraySizeKnown and op == lex.Operator.Equal) {
                 qualtype.arraySizeKnown = true;
-                qualtype.arrayExtent.size = str.len;
+                qualtype.arraySize.size = str.len;
             }
 
             return .{ .op = op, .val = .{ .str = str } };
@@ -270,6 +330,7 @@ pub fn all(allocator: std.mem.Allocator, filename: []const u8, source: []const u
     defer allocator.free(tokens);
     var state = State.new(tokens);
     var fields = std.ArrayList(Field).init(allocator);
+    errdefer fields.deinit();
 
     while (state.has()) {
         const field = try state.next();
@@ -290,7 +351,7 @@ pub fn all(allocator: std.mem.Allocator, filename: []const u8, source: []const u
     return .{
         .name = state.name.?,
         .namespace = state.namespace.?,
-        .fields = fields.items,
+        .fields = fields.toOwnedSlice(),
         .allocator = allocator,
     };
 }
@@ -319,7 +380,7 @@ test "magic" {
     try std.testing.expectEqual(Datatype.Byte, magic.typ.datatype);
     try std.testing.expect(magic.typ.isArray);
     try std.testing.expect(magic.typ.arraySizeKnown);
-    try std.testing.expectEqual(@as(usize, 4), magic.typ.arrayExtent.size);
+    try std.testing.expectEqual(@as(usize, 4), magic.typ.arraySize.size);
     try std.testing.expect(magic.constraint != null);
     try std.testing.expectEqual(lex.Operator.Equal, magic.constraint.?.op);
     try std.testing.expectEqualStrings("TEST", magic.constraint.?.val.str);
@@ -339,7 +400,7 @@ test "version" {
     try std.testing.expectEqual(Datatype.Byte, magic.typ.datatype);
     try std.testing.expect(magic.typ.isArray);
     try std.testing.expect(magic.typ.arraySizeKnown);
-    try std.testing.expectEqual(@as(usize, 7), magic.typ.arrayExtent.size);
+    try std.testing.expectEqual(@as(usize, 7), magic.typ.arraySize.size);
     try std.testing.expect(magic.constraint != null);
     try std.testing.expectEqual(lex.Operator.Equal, magic.constraint.?.op);
     try std.testing.expectEqualStrings("TESTFIL", magic.constraint.?.val.str);
@@ -367,7 +428,7 @@ test "ints" {
     try std.testing.expectEqual(Datatype.Byte, magic.typ.datatype);
     try std.testing.expect(magic.typ.isArray);
     try std.testing.expect(magic.typ.arraySizeKnown);
-    try std.testing.expectEqual(@as(usize, 7), magic.typ.arrayExtent.size);
+    try std.testing.expectEqual(@as(usize, 7), magic.typ.arraySize.size);
     try std.testing.expect(magic.constraint != null);
     try std.testing.expectEqual(lex.Operator.Equal, magic.constraint.?.op);
     try std.testing.expectEqualStrings("TESTFIL", magic.constraint.?.val.str);
@@ -407,4 +468,57 @@ test "ints" {
     try std.testing.expect(d.constraint == null);
     try std.testing.expectEqual(d.typ.datatype, .Long);
     try std.testing.expect(!d.typ.isSigned);
+}
+
+test "arrays" {
+    const format = try all(std.testing.allocator, "test", @embedFile("tests/parse/arrays.ff"));
+    defer format.deinit();
+
+    try std.testing.expectEqualStrings("test v4", format.name);
+    try std.testing.expectEqualStrings("test_v4", format.namespace);
+
+    try std.testing.expectEqual(@as(usize, 5), format.fields.len);
+
+    const magic = format.fields[0];
+    try std.testing.expectEqualStrings("Magic", magic.name);
+    try std.testing.expectEqual(Datatype.Byte, magic.typ.datatype);
+    try std.testing.expect(magic.typ.isArray);
+    try std.testing.expect(magic.typ.arraySizeKnown);
+    try std.testing.expectEqual(@as(usize, 7), magic.typ.arraySize.size);
+    try std.testing.expect(magic.constraint != null);
+    try std.testing.expectEqual(lex.Operator.Equal, magic.constraint.?.op);
+    try std.testing.expectEqualStrings("TESTFIL", magic.constraint.?.val.str);
+
+    const version = format.fields[1];
+    try std.testing.expectEqualStrings("Version", version.name);
+    try std.testing.expectEqual(Datatype.Byte, version.typ.datatype);
+    try std.testing.expect(!version.typ.isArray);
+    try std.testing.expect(version.constraint != null);
+    try std.testing.expectEqual(lex.Operator.Equal, version.constraint.?.op);
+    try std.testing.expectEqual(@as(isize, 4), version.constraint.?.val.int);
+
+    const a = format.fields[2];
+    try std.testing.expectEqualStrings("A", a.name);
+    try std.testing.expect(!a.typ.isArray);
+    try std.testing.expect(a.constraint == null);
+    try std.testing.expectEqual(a.typ.datatype, .Byte);
+    try std.testing.expect(!a.typ.isSigned);
+
+    const b = format.fields[3];
+    try std.testing.expectEqualStrings("B", b.name);
+    try std.testing.expect(b.typ.isArray);
+    try std.testing.expect(!b.typ.arraySizeKnown);
+    try std.testing.expectEqualStrings("A", b.typ.arraySize.ref);
+    try std.testing.expect(b.constraint == null);
+    try std.testing.expectEqual(b.typ.datatype, .Short);
+    try std.testing.expect(b.typ.isSigned);
+
+    const c = format.fields[4];
+    try std.testing.expectEqualStrings("C", c.name);
+    try std.testing.expect(c.typ.isArray);
+    try std.testing.expect(c.typ.arraySizeKnown);
+    try std.testing.expectEqual(@as(usize, 10), c.typ.arraySize.size);
+    try std.testing.expect(c.constraint == null);
+    try std.testing.expectEqual(c.typ.datatype, .Int);
+    try std.testing.expect(!c.typ.isSigned);
 }
