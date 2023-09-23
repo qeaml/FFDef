@@ -1,0 +1,18 @@
+Format "test v6"
+Namespace "test_v6"
+
+"Magic" bytes = "TESTFIL"
+"Version" byte = 6
+
+Struct "String" (
+  "Len" byte
+  "Data" byte array("Len")
+)
+
+Struct "RequiredString" (
+  "Len" byte > 0
+  "Data" byte array("Len")
+)
+
+"Name" "RequiredString"
+"RealName" "String"

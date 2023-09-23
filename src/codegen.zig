@@ -1,3 +1,5 @@
+// TODO full rewrite of this due to structs
+
 const std = @import("std");
 const parse = @import("parse.zig");
 
@@ -9,6 +11,8 @@ pub fn write(fmt: parse.Format, header: anytype, reader: anytype, writer: anytyp
 
 fn writeHeader(fmt: parse.Format, out: anytype) !void {
     try writeHeaderComment(fmt, out);
+
+    try writeStructs(fmt, out);
 
     try writeStruct(fmt, out);
 
@@ -34,6 +38,23 @@ fn writeHeaderComment(fmt: parse.Format, out: anytype) !void {
     , .{fmt.name});
 }
 
+fn writeStructs(fmt: parse.Format, out: anytype) !void {
+    for (fmt.structs) |s| {
+        try out.print(
+            \\typedef {s}_{s}_{{
+            \\
+        , .{ fmt.namespace, s.name });
+        for (s.fields) |f| {
+            try out.writeByte(' ');
+            try writeFieldDef(f, out);
+        }
+        try out.print(
+            \\}} {s}_{s};
+            \\
+        , .{ fmt.namespace, s.name });
+    }
+}
+
 fn writeStruct(fmt: parse.Format, out: anytype) !void {
     try out.print(
         \\typedef struct {s}_{{
@@ -41,21 +62,25 @@ fn writeStruct(fmt: parse.Format, out: anytype) !void {
     , .{fmt.namespace});
 
     for (fmt.fields) |f| {
-        // if (f.constraint) |c| {
-        //     if (c.op == .Equal) {
-        //         continue;
-        //     }
-        // }
         try out.writeByte(' ');
-        try writeTypePt1(out, f.typ);
-        _ = try out.write(f.name);
-        try writeTypePt2(out, f.typ);
-        try out.writeByte(';');
-        try out.writeByte('\n');
+        try writeFieldDef(f, out);
     }
 
     try out.writeByte('}');
     _ = try out.write(fmt.namespace);
+    try out.writeByte(';');
+    try out.writeByte('\n');
+}
+
+fn writeFieldDef(field: parse.Field, out: anytype) !void {
+    // if (f.constraint) |c| {
+    //     if (c.op == .Equal) {
+    //         continue;
+    //     }
+    // }
+    try writeTypePt1(out, field.typ);
+    _ = try out.write(field.name);
+    try writeTypePt2(out, field.typ);
     try out.writeByte(';');
     try out.writeByte('\n');
 }
@@ -270,10 +295,12 @@ fn writeFieldWriter(out: anytype, field: parse.Field, idx: usize) !void {
 }
 
 fn writeTypePt1(out: anytype, typ: parse.QualType) !void {
-    if (typ.isSigned) {
-        _ = try out.write("signed ");
-    } else {
-        _ = try out.write("unsigned ");
+    if (typ.datatype != .Struct) {
+        if (typ.isSigned) {
+            _ = try out.write("signed ");
+        } else {
+            _ = try out.write("unsigned ");
+        }
     }
 
     _ = switch (typ.datatype) {
@@ -281,6 +308,10 @@ fn writeTypePt1(out: anytype, typ: parse.QualType) !void {
         .Short => try out.write("short "),
         .Int => try out.write("int "),
         .Long => try out.write("long long "),
+        .Struct => {
+            _ = try out.write(typ.structName.?);
+            try out.writeByte(' ');
+        },
     };
 
     if (typ.isArray and !typ.arraySizeKnown) {

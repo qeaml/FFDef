@@ -1,0 +1,24 @@
+Format "nwge shape"
+Namespace "shape"
+
+"magic" bytes = "NWGESHP"
+"version" byte = 1
+
+Struct "point" (
+  "x" short
+  "y" short
+  "u" dword
+  "v" dword
+)
+
+Struct "tri" (
+  "aIdx" dword
+  "bIdx" dword
+  "cIdx" dword
+)
+
+"pointCount" dword > 0
+"points" "point" array("pointCount")
+
+"triCount" dword > 0
+"tris" "tri" array("triCount")

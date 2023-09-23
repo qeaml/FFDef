@@ -10,7 +10,7 @@ pub const Error = error{
     UnknownTypename, // unknown typename
 };
 
-pub const Punctuator = enum { LeftParen, RightParen };
+pub const Punctuator = enum { LeftParen, RightParen, Dot };
 
 pub const Operator = enum {
     Equal,
@@ -21,7 +21,7 @@ pub const Operator = enum {
     Lesser,
 };
 
-pub const Directive = enum { Format, Namespace };
+pub const Directive = enum { Format, Namespace, Struct };
 
 pub const Typename = enum {
     Byte,
@@ -132,6 +132,7 @@ const State = struct {
         switch (c.?) {
             '(' => return .{ .pos = pos, .data = .{ .Punctuator = .LeftParen } },
             ')' => return .{ .pos = pos, .data = .{ .Punctuator = .RightParen } },
+            '.' => return .{ .pos = pos, .data = .{ .Punctuator = .Dot } },
             '=' => return .{ .pos = pos, .data = .{ .Operator = .Equal } },
             '<' => {
                 const c2 = self.getc();
@@ -233,6 +234,9 @@ const State = struct {
         }
         if (std.mem.eql(u8, ident, "Namespace")) {
             return .{ .pos = pos, .data = .{ .Directive = .Namespace } };
+        }
+        if (std.mem.eql(u8, ident, "Struct")) {
+            return .{ .pos = pos, .data = .{ .Directive = .Struct } };
         }
         if (std.mem.eql(u8, ident, "byte")) {
             return .{ .pos = pos, .data = .{ .Typename = .Byte } };
@@ -381,7 +385,7 @@ test "string" {
 }
 
 test "punctuators" {
-    var state = State.new("test", " ( ) ");
+    var state = State.new("test", " ( . ) ");
 
     {
         const token = try state.next();
@@ -389,6 +393,17 @@ test "punctuators" {
         switch (token.?.data) {
             .Punctuator => |p| {
                 try std.testing.expectEqual(Punctuator.LeftParen, p);
+            },
+            else => return error.UnexpectedTestResult,
+        }
+    }
+
+    {
+        const token = try state.next();
+        try std.testing.expect(token != null);
+        switch (token.?.data) {
+            .Punctuator => |p| {
+                try std.testing.expectEqual(Punctuator.Dot, p);
             },
             else => return error.UnexpectedTestResult,
         }
@@ -477,7 +492,7 @@ test "operators" {
 }
 
 test "directives" {
-    var state = State.new("test", " Format Namespace ");
+    var state = State.new("test", " Format Namespace  Struct ");
 
     {
         const token = try state.next();
@@ -496,6 +511,17 @@ test "directives" {
         switch (token.?.data) {
             .Directive => |d| {
                 try std.testing.expectEqual(Directive.Namespace, d);
+            },
+            else => return error.UnexpectedTestResult,
+        }
+    }
+
+    {
+        const token = try state.next();
+        try std.testing.expect(token != null);
+        switch (token.?.data) {
+            .Directive => |d| {
+                try std.testing.expectEqual(Directive.Struct, d);
             },
             else => return error.UnexpectedTestResult,
         }
