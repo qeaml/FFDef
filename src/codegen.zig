@@ -28,6 +28,7 @@ fn writeHeaderComment(fmt: parse.Format, out: anytype) !void {
         \\
         \\#pragma once
         \\#include <stdlib.h>
+        \\#include <string.h>
         \\#include <SDL2/SDL_rwops.h>
         \\
     , .{fmt.name});
@@ -40,11 +41,11 @@ fn writeStruct(fmt: parse.Format, out: anytype) !void {
     , .{fmt.namespace});
 
     for (fmt.fields) |f| {
-        if (f.constraint) |c| {
-            if (c.op == .Equal) {
-                continue;
-            }
-        }
+        // if (f.constraint) |c| {
+        //     if (c.op == .Equal) {
+        //         continue;
+        //     }
+        // }
         try out.writeByte(' ');
         try writeTypePt1(out, f.typ);
         _ = try out.write(f.name);
@@ -96,8 +97,8 @@ fn writeReader(fmt: parse.Format, out: anytype) !void {
         \\
     , .{ fmt.namespace, fmt.namespace });
 
-    for (fmt.fields) |f, i| {
-        try writeFieldReader(out, f, i);
+    for (fmt.fields, 0..) |field, idx| {
+        try writeFieldReader(out, field, idx);
     }
 
     _ = try out.write(" return 0;\n}\n");
@@ -112,7 +113,6 @@ fn writeReaderComment(fmt: parse.Format, out: anytype) !void {
         \\*/
         \\
         \\#include "{s}.h"
-        \\#include <string.h>
         \\
     , .{ fmt.name, fmt.namespace });
 }
@@ -201,7 +201,7 @@ fn writeWriter(fmt: parse.Format, out: anytype) !void {
         \\
     , .{ fmt.namespace, fmt.namespace });
 
-    for (fmt.fields) |f, idx| {
+    for (fmt.fields, 0..) |f, idx| {
         try writeFieldWriter(out, f, idx);
     }
     _ = try out.write("  return 0;\n}\n");

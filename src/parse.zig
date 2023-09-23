@@ -214,7 +214,7 @@ const State = struct {
                     return Error.InvalidArraySize;
                 }
                 qualtype.arraySizeKnown = true;
-                qualtype.arraySize = .{ .size = @intCast(usize, i) };
+                qualtype.arraySize = .{ .size = @intCast(i) };
             },
             else => return Error.InvalidArraySize,
         }
@@ -351,7 +351,7 @@ pub fn all(allocator: std.mem.Allocator, filename: []const u8, source: []const u
     return .{
         .name = state.name.?,
         .namespace = state.namespace.?,
-        .fields = fields.toOwnedSlice(),
+        .fields = try fields.toOwnedSlice(),
         .allocator = allocator,
     };
 }

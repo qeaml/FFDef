@@ -1,0 +1,28 @@
+Format "Contact Info"
+Namespace "contact"
+
+"Magic" bytes = "CONTACT"
+"Version" byte = 1
+
+# this is required as a display name
+"NameLen" byte > 0
+"Name" byte array("NameLen")
+
+# first and last name are optional
+"FirstNameLen" byte
+"FirstName" byte array("FirstNameLen")
+
+"LastNameLen" byte
+"LastName" byte array("LastNameLen")
+
+# e-mail is also optional
+"EmailLen" byte
+"Email" byte array("EmailLen")
+
+# these are 1-indexed, so 0 on any of these means its unspecified
+"BirthdayDay" byte
+"BirthdayMonth" byte
+"BirthdayYear" word
+
+# 0 is considered unspecified
+"PhoneNumber" dword

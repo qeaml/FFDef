@@ -7,11 +7,17 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     const args = try std.process.argsAlloc(allocator);
-    defer allocator.free(args);
+    defer std.process.argsFree(allocator, args);
 
     if (args.len < 2) {
         std.debug.print("Provide a filename", .{});
         return;
+    }
+
+    var root = std.fs.cwd();
+    if (args.len >= 3) {
+        root.makeDir(args[2]) catch {};
+        root = try root.openDir(args[2], .{});
     }
 
     const filename = args[1];
@@ -21,12 +27,30 @@ pub fn main() !void {
     defer allocator.free(source);
 
     const format = try parse.all(allocator, filename, source);
-    const header = std.ArrayList(u8).init(allocator);
+    var header = std.ArrayList(u8).init(allocator);
     defer header.deinit();
-    const reader = std.ArrayList(u8).init(allocator);
+    var reader = std.ArrayList(u8).init(allocator);
     defer reader.deinit();
-    const writer = std.ArrayList(u8).init(allocator);
+    var writer = std.ArrayList(u8).init(allocator);
     defer writer.deinit();
 
-    try codegen.write(format, std.io.getStdOut().writer(), std.io.getStdOut().writer(), std.io.getStdOut().writer());
+    try codegen.write(format, header.writer(), reader.writer(), writer.writer());
+
+    var headerName = std.ArrayList(u8).fromOwnedSlice(allocator, try allocator.dupe(u8, format.namespace));
+    try headerName.appendSlice(".h");
+    defer headerName.deinit();
+    const headerFile = try root.createFile(headerName.items, .{});
+    try headerFile.writer().writeAll(header.items);
+
+    var readerName = std.ArrayList(u8).fromOwnedSlice(allocator, try allocator.dupe(u8, format.namespace));
+    try readerName.appendSlice("_reader.c");
+    defer readerName.deinit();
+    const readerFile = try root.createFile(readerName.items, .{});
+    try readerFile.writer().writeAll(reader.items);
+
+    var writerName = std.ArrayList(u8).fromOwnedSlice(allocator, try allocator.dupe(u8, format.namespace));
+    try writerName.appendSlice("_writer.c");
+    defer writerName.deinit();
+    const writerFile = try root.createFile(writerName.items, .{});
+    try writerFile.writer().writeAll(writer.items);
 }

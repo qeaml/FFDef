@@ -1,2 +1,7 @@
 /zig-cache
 /zig-out
+
+/examples/*/*_reader.c
+/examples/*/*_writer.c
+/examples/*/*.h
+/examples/*/*.exe
