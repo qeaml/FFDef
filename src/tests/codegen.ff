@@ -1,0 +1,14 @@
+Format "test v5"
+Namespace "test_v5"
+
+"Magic" bytes = "TESTFIL"
+"Version" byte = 5
+
+"A" signed byte
+"B" word
+"C" int
+"D" unsigned long
+
+"E" byte
+"F" short array("E")
+"G" unsigned int array(10)
