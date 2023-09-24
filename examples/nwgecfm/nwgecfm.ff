@@ -1,0 +1,29 @@
+Format "Nwge Cached Font Map"
+Namespace "fontfile"
+
+"magic" bytes = "NWGECFM"
+"version" byte = 1
+
+Struct "pixel" (
+  "r" byte
+  "g" byte
+  "b" byte
+  "a" byte
+)
+
+Struct "bitmap" (
+  "length" dword > 0
+  "width" dword > 0
+  "pixels" "pixel" array("length")
+)
+
+Struct "character" (
+  # the measurements below are in Pixels!
+  "u" dword
+  "v" dword
+  "w" dword > 0
+  "h" dword > 0
+)
+
+"texture" "bitmap"
+"charmap" "character" array(96)

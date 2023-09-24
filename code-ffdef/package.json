@@ -1,0 +1,25 @@
+{
+  "name": "ffdef",
+  "displayName": "FFDef",
+  "description": "Provides highlighting for FFDef definition files.",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.82.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "ffdef",
+      "aliases": ["FFDef", "ffdef"],
+      "extensions": [".ff"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "ffdef",
+      "scopeName": "source.ff",
+      "path": "./syntaxes/ffdef.tmLanguage.json"
+    }]
+  }
+}

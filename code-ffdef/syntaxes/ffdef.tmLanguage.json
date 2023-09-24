@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "FFDef",
+  "patterns": [
+    {"include":"#comments"},
+    {"include":"#directives"},
+    {"include":"#strings"},
+    {"include":"#types"},
+    {"include":"#modifiers"},
+    {"include":"#operators"},
+    {"include":"#integers"}
+  ],
+  "repository": {
+    "directives": {
+      "name": "keyword.control.directive.ffdef",
+      "match": "\\b(Format|Namespace|Struct)\\b"
+    },
+    "strings": {
+      "name": "string.quoted.ffdef",
+      "begin": "\"|'|`",
+      "end": "\\0",
+      "patterns": [
+        {
+          "name": "constant.character.escape.ffdef",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "types": {
+      "name": "storage.type.ffdef",
+      "match": "\\b(byte|bytes|word|short|dword|int|qword|long)\\b"
+    },
+    "modifiers": {
+      "name": "storage.modifier.ffdef",
+      "match": "\\b(signed|unsigned|array)\\b"
+    },
+    "operators": {
+      "name": "keyword.operator.ffdef",
+      "match": "=|>=|<=|!=|>|<|\\(|\\)"
+    },
+    "integers": {
+      "name": "constant.numeric.ffdef",
+      "match": "\\b(\\d+)\\b"
+    },
+    "comments": {
+      "name": "comment.line.number-sign.ffdef",
+      "begin": "#",
+      "end": "\\n"
+    }
+  },
+  "scopeName": "source.ff"
+}
