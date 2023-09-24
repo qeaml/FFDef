@@ -3,6 +3,20 @@ const common = @import("common.zig");
 const parse = @import("../parse.zig");
 
 pub fn write(fmt: parse.Format, out: anytype) !void {
+    try out.print(
+        \\#pragma once
+        \\
+        \\/*
+        \\{s}.h
+        \\----------
+        \\{s} file format definitions
+        \\*/
+        \\
+        \\#include<string.h>
+        \\#include<stdlib.h>
+        \\
+    , .{ fmt.namespace, fmt.name });
+
     for (fmt.structs) |s| {
         try writeStruct(s.fields, fmt.namespace, fmt.namespace, s.name, out);
     }
@@ -25,7 +39,26 @@ fn writeStruct(fields: []parse.Field, outer_namespace: []const u8, inner_namespa
     if (inner_namespace) |ns| {
         try out.print("{s}_", .{ns});
     }
-    try out.print("{s};\n", .{name});
+    try out.print(
+        \\{s};
+        \\int 
+    , .{name});
+    if (inner_namespace) |ns| {
+        try out.print("{s}_", .{ns});
+    }
+    try out.print("{s}_read(SDL_RWops *src, ", .{name});
+    if (inner_namespace) |ns| {
+        try out.print("{s}_", .{ns});
+    }
+    try out.print("{s} *out);\nint ", .{name});
+    if (inner_namespace) |ns| {
+        try out.print("{s}_", .{ns});
+    }
+    try out.print("{s}_write(SDL_RWops *out, ", .{name});
+    if (inner_namespace) |ns| {
+        try out.print("{s}_", .{ns});
+    }
+    try out.print("{s} src);\n", .{name});
     try writeNew(inner_namespace, name, out);
     try writeFree(outer_namespace, inner_namespace, name, fields, out);
 }
@@ -116,11 +149,11 @@ fn writeFreeDynArray(namespace: []const u8, f: parse.Field, out: anytype) !void 
             \\for(size_t i = 0; i < it->{s}; i++) {{
             \\   
         , .{f.typ.arraySize.ref});
-        try out.print("{s}_{s}_free(&it->{s}[i]);\n  }}\n ", .{
+        try out.print("{s}_{s}_free(&it->{s}[i]);\n  }}\n  ", .{
             namespace,
             f.typ.structName.?,
             f.name,
         });
     }
-    _ = try out.write("}\n ");
+    try out.print("free(it->{s});\n }}\n ", .{f.name});
 }

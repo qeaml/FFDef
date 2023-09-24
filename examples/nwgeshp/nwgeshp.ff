@@ -7,18 +7,18 @@ Namespace "shape"
 Struct "point" (
   "x" short
   "y" short
-  "u" dword
-  "v" dword
+  "u" word
+  "v" word
 )
 
 Struct "tri" (
-  "aIdx" dword
-  "bIdx" dword
-  "cIdx" dword
+  "aIdx" word
+  "bIdx" word
+  "cIdx" word
 )
 
-"pointCount" dword > 0
+"pointCount" word > 0
 "points" "point" array("pointCount")
 
-"triCount" dword > 0
+"triCount" word > 0
 "tris" "tri" array("triCount")
