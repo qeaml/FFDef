@@ -21,9 +21,15 @@ pub fn main() !void {
     }
 
     const filename = args[1];
-    const file = try std.fs.cwd().openFile(filename, .{});
+    const file = std.fs.cwd().openFile(filename, .{}) catch |e| {
+        std.log.err("Could not open file '{s}': {?}", .{ filename, e });
+        return;
+    };
     defer file.close();
-    const source = try file.reader().readAllAlloc(allocator, 102400);
+    const source = file.reader().readAllAlloc(allocator, 102400) catch |e| {
+        std.log.err("Could not read file '{s}': {?}", .{ filename, e });
+        return;
+    };
     defer allocator.free(source);
 
     const format = try parse.all(allocator, filename, source);
@@ -36,21 +42,42 @@ pub fn main() !void {
 
     try codegen.write(format, header.writer(), reader.writer(), writer.writer());
 
-    var headerName = std.ArrayList(u8).fromOwnedSlice(allocator, try allocator.dupe(u8, format.namespace));
-    try headerName.appendSlice(".h");
-    defer headerName.deinit();
-    const headerFile = try root.createFile(headerName.items, .{});
-    try headerFile.writer().writeAll(header.items);
+    writeHeader: {
+        var headerName = std.ArrayList(u8).fromOwnedSlice(allocator, try allocator.dupe(u8, format.namespace));
+        try headerName.appendSlice(".h");
+        defer headerName.deinit();
+        const headerFile = root.createFile(headerName.items, .{}) catch |e| {
+            std.log.err("Could not create header file '{s}': {?}", .{ headerName.items, e });
+            break :writeHeader;
+        };
+        headerFile.writer().writeAll(header.items) catch |e| {
+            std.log.err("Could not write to header file '{s}': {?}", .{ headerName.items, e });
+        };
+    }
 
-    var readerName = std.ArrayList(u8).fromOwnedSlice(allocator, try allocator.dupe(u8, format.namespace));
-    try readerName.appendSlice("_reader.c");
-    defer readerName.deinit();
-    const readerFile = try root.createFile(readerName.items, .{});
-    try readerFile.writer().writeAll(reader.items);
+    writeReader: {
+        var readerName = std.ArrayList(u8).fromOwnedSlice(allocator, try allocator.dupe(u8, format.namespace));
+        try readerName.appendSlice("_reader.c");
+        defer readerName.deinit();
+        const readerFile = root.createFile(readerName.items, .{}) catch |e| {
+            std.log.err("Could not create reader implementation file '{s}': {?}", .{ readerName.items, e });
+            break :writeReader;
+        };
+        readerFile.writer().writeAll(reader.items) catch |e| {
+            std.log.err("Could not write to reader implementation file '{s}': {?}", .{ readerName.items, e });
+        };
+    }
 
-    var writerName = std.ArrayList(u8).fromOwnedSlice(allocator, try allocator.dupe(u8, format.namespace));
-    try writerName.appendSlice("_writer.c");
-    defer writerName.deinit();
-    const writerFile = try root.createFile(writerName.items, .{});
-    try writerFile.writer().writeAll(writer.items);
+    writeWriter: {
+        var writerName = std.ArrayList(u8).fromOwnedSlice(allocator, try allocator.dupe(u8, format.namespace));
+        try writerName.appendSlice("_writer.c");
+        defer writerName.deinit();
+        const writerFile = root.createFile(writerName.items, .{}) catch |e| {
+            std.log.err("Could not create writer implementation file '{s}': {?}", .{ writerName.items, e });
+            break :writeWriter;
+        };
+        writerFile.writer().writeAll(writer.items) catch |e| {
+            std.log.err("Could not write to writer implementation file '{s}': {?}", .{ writerName.items, e });
+        };
+    }
 }
