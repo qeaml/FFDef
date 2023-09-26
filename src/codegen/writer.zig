@@ -1,12 +1,13 @@
 const std = @import("std");
-const common = @import("common.zig");
 const parse = @import("../parse.zig");
+const version = @import("../version.zig").current;
 
 pub fn write(fmt: parse.Format, out: anytype) !void {
     try out.print(
+        \\// Generated with FFDef v{d}.{d}.{d}
         \\#include"{s}.h"
         \\
-    , .{fmt.namespace});
+    , .{ version.major, version.minor, version.patch, fmt.namespace });
 
     for (fmt.structs) |s| {
         try writeStruct(true, fmt.namespace, s.name, s.fields, out);
@@ -24,15 +25,14 @@ fn writeStruct(comptime namespaced: bool, namespace: []const u8, name: []const u
     if (namespaced) {
         try out.print("{s}_", .{namespace});
     }
-    _ = try out.write(" src) {\n int status;\n");
+    try out.print("{s} src) {{\n int status;\n", .{name});
 
     for (fields, 0..) |field, idx| {
         try out.writeByte(' ');
         try writeField(namespace, field, idx, out);
     }
 
-    try out.writeByte('}');
-    try out.writeByte('\n');
+    _ = try out.write(" return 0;\n}\n");
 }
 
 fn writeField(namespace: []const u8, field: parse.Field, idx: usize, out: anytype) !void {
@@ -93,7 +93,7 @@ fn writeStaticArrayField(namespace: []const u8, field: parse.Field, idx: usize, 
     switch (field.typ.datatype) {
         .Byte => {
             try out.print(
-                \\if(SDL_RWwrite(out, &src.{s}, 1, {d}) != {d}) {{
+                \\if(SDL_RWwrite(out, src.{s}, 1, {d}) != {d}) {{
                 \\  return -{d};
                 \\ }}
                 \\
@@ -106,7 +106,7 @@ fn writeStaticArrayField(namespace: []const u8, field: parse.Field, idx: usize, 
         },
         .Short => {
             try out.print(
-                \\if(SDL_RWwrite(out, &src.{s}, 2, {d}) != {d}) {{
+                \\if(SDL_RWwrite(out, src.{s}, 2, {d}) != {d}) {{
                 \\  return -{d};
                 \\ }}
                 \\
@@ -119,7 +119,7 @@ fn writeStaticArrayField(namespace: []const u8, field: parse.Field, idx: usize, 
         },
         .Int => {
             try out.print(
-                \\if(SDL_RWwrite(out, &src.{s}, 4, {d}) != {d}) {{
+                \\if(SDL_RWwrite(out, src.{s}, 4, {d}) != {d}) {{
                 \\  return -{d};
                 \\ }}
                 \\
@@ -132,7 +132,7 @@ fn writeStaticArrayField(namespace: []const u8, field: parse.Field, idx: usize, 
         },
         .Long => {
             try out.print(
-                \\if(SDL_RWwrite(out, &src.{s}, 8, {d}) != {d}) {{
+                \\if(SDL_RWwrite(out, src.{s}, 8, {d}) != {d}) {{
                 \\  return -{d};
                 \\ }}
                 \\
@@ -160,7 +160,7 @@ fn writeDynArrayField(namespace: []const u8, field: parse.Field, idx: usize, out
     switch (field.typ.datatype) {
         .Byte => {
             try out.print(
-                \\if(SDL_RWwrite(out, &src.{s}, 1, src.{s}) != src.{s}) {{
+                \\if(SDL_RWwrite(out, src.{s}, 1, src.{s}) != src.{s}) {{
                 \\  return -{d};
                 \\ }}
                 \\
@@ -173,7 +173,7 @@ fn writeDynArrayField(namespace: []const u8, field: parse.Field, idx: usize, out
         },
         .Short => {
             try out.print(
-                \\if(SDL_RWwrite(out, &src.{s}, 2, src.{s}) != src.{s}) {{
+                \\if(SDL_RWwrite(out, src.{s}, 2, src.{s}) != src.{s}) {{
                 \\  return -{d};
                 \\ }}
                 \\
@@ -186,7 +186,7 @@ fn writeDynArrayField(namespace: []const u8, field: parse.Field, idx: usize, out
         },
         .Int => {
             try out.print(
-                \\if(SDL_RWwrite(out, &src.{s}, 4, src.{s}) != src.{s}) {{
+                \\if(SDL_RWwrite(out, src.{s}, 4, src.{s}) != src.{s}) {{
                 \\  return -{d};
                 \\ }}
                 \\
@@ -199,7 +199,7 @@ fn writeDynArrayField(namespace: []const u8, field: parse.Field, idx: usize, out
         },
         .Long => {
             try out.print(
-                \\if(SDL_RWwrite(out, &src.{s}, 8, src.{s}) != src.{s}) {{
+                \\if(SDL_RWwrite(out, src.{s}, 8, src.{s}) != src.{s}) {{
                 \\  return -{d};
                 \\ }}
                 \\

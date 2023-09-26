@@ -1,6 +1,6 @@
 const std = @import("std");
-const common = @import("common.zig");
 const parse = @import("../parse.zig");
+const version = @import("../version.zig").current;
 
 pub fn write(fmt: parse.Format, out: anytype) !void {
     try out.print(
@@ -10,57 +10,60 @@ pub fn write(fmt: parse.Format, out: anytype) !void {
         \\{s}.h
         \\----------
         \\{s} file format definitions
+        \\Generated with FFDef v{d}.{d}.{d}
         \\*/
         \\
         \\#include<string.h>
         \\#include<stdlib.h>
+        \\#include<SDL2/SDL_RWops.h>
         \\
-    , .{ fmt.namespace, fmt.name });
+    , .{ fmt.namespace, fmt.name, version.major, version.minor, version.patch });
 
     for (fmt.structs) |s| {
-        try writeStruct(s.fields, fmt.namespace, fmt.namespace, s.name, out);
+        try writeStruct(true, fmt.namespace, s.name, s.fields, out);
     }
-    try writeStruct(fmt.fields, fmt.namespace, null, fmt.namespace, out);
+
+    try writeStruct(false, fmt.namespace, fmt.namespace, fmt.fields, out);
 }
 
-fn writeStruct(fields: []parse.Field, outer_namespace: []const u8, inner_namespace: ?[]const u8, name: []const u8, out: anytype) !void {
+fn writeStruct(comptime namespaced: bool, namespace: []const u8, name: []const u8, fields: []parse.Field, out: anytype) !void {
     _ = try out.write("typedef struct ");
-    if (inner_namespace) |ns| {
-        try out.print("{s}_", .{ns});
+    if (namespaced) {
+        try out.print("{s}_", .{namespace});
     }
     try out.print("{s}_{{\n", .{name});
 
     for (fields) |f| {
         try out.writeByte(' ');
-        try writeField(outer_namespace, f, out);
+        try writeField(namespace, f, out);
     }
 
     try out.writeByte('}');
-    if (inner_namespace) |ns| {
-        try out.print("{s}_", .{ns});
+    if (namespaced) {
+        try out.print("{s}_", .{namespace});
     }
     try out.print(
         \\{s};
         \\int 
     , .{name});
-    if (inner_namespace) |ns| {
-        try out.print("{s}_", .{ns});
+    if (namespaced) {
+        try out.print("{s}_", .{namespace});
     }
     try out.print("{s}_read(SDL_RWops *src, ", .{name});
-    if (inner_namespace) |ns| {
-        try out.print("{s}_", .{ns});
+    if (namespaced) {
+        try out.print("{s}_", .{namespace});
     }
     try out.print("{s} *out);\nint ", .{name});
-    if (inner_namespace) |ns| {
-        try out.print("{s}_", .{ns});
+    if (namespaced) {
+        try out.print("{s}_", .{namespace});
     }
     try out.print("{s}_write(SDL_RWops *out, ", .{name});
-    if (inner_namespace) |ns| {
-        try out.print("{s}_", .{ns});
+    if (namespaced) {
+        try out.print("{s}_", .{namespace});
     }
     try out.print("{s} src);\n", .{name});
-    try writeNew(inner_namespace, name, out);
-    try writeFree(outer_namespace, inner_namespace, name, fields, out);
+    try writeNew(namespaced, namespace, name, out);
+    try writeFree(namespaced, namespace, name, fields, out);
 }
 
 fn writeField(namespace: []const u8, f: parse.Field, out: anytype) !void {
@@ -86,20 +89,20 @@ fn writeField(namespace: []const u8, f: parse.Field, out: anytype) !void {
     try out.writeByte('\n');
 }
 
-fn writeNew(namespace: ?[]const u8, name: []const u8, out: anytype) !void {
+fn writeNew(comptime namespaced: bool, namespace: []const u8, name: []const u8, out: anytype) !void {
     _ = try out.write("inline ");
-    if (namespace) |ns| {
-        try out.print("{s}_", .{ns});
+    if (namespaced) {
+        try out.print("{s}_", .{namespace});
     }
     _ = try out.write(name);
     try out.writeByte(' ');
-    if (namespace) |ns| {
-        try out.print("{s}_", .{ns});
+    if (namespaced) {
+        try out.print("{s}_", .{namespace});
     }
     try out.print("{s}_new(void) {{\n ", .{name});
 
-    if (namespace) |ns| {
-        try out.print("{s}_", .{ns});
+    if (namespaced) {
+        try out.print("{s}_", .{namespace});
     }
     try out.print(
         \\{s} it;
@@ -110,20 +113,20 @@ fn writeNew(namespace: ?[]const u8, name: []const u8, out: anytype) !void {
     , .{name});
 }
 
-fn writeFree(outer_namespace: []const u8, inner_namespace: ?[]const u8, name: []const u8, fields: []parse.Field, out: anytype) !void {
+fn writeFree(comptime namespaced: bool, namespace: []const u8, name: []const u8, fields: []parse.Field, out: anytype) !void {
     _ = try out.write("inline void ");
-    if (inner_namespace) |ns| {
-        try out.print("{s}_", .{ns});
+    if (namespaced) {
+        try out.print("{s}_", .{namespace});
     }
     try out.print("{s}_free(", .{name});
 
-    if (inner_namespace) |ns| {
-        try out.print("{s}_", .{ns});
+    if (namespaced) {
+        try out.print("{s}_", .{namespace});
     }
     try out.print("{s} *it) {{\n ", .{name});
 
     for (fields) |f| {
-        try writeFreeField(outer_namespace, f, out);
+        try writeFreeField(namespace, f, out);
     }
 
     _ = try out.write("memset(it, 0, sizeof(*it));\n}\n");

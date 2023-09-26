@@ -6,24 +6,23 @@
 #define ff_errorNo(status) (-(status) >> 8)
 #define ff_errorField(status) (-(status) & 0xFF)
 
+#define AllocCopyStr(target, string) \
+  target##Len = sizeof(string) - 1;  \
+  target = malloc(sizeof(string));   \
+  memcpy(target, string, sizeof(string))
+
 int main(int argc, char **argv) {
   (void)argc; (void)argv;
 
-  contact c = new_contact();
+  contact c = contact_new();
 
   memcpy(c.Magic, "CONTACT", sizeof(c.Magic));
   c.Version = 1;
 
-  c.Name = "THE JOE";
-  c.NameLen = 7;
-
-  c.FirstName = "Joe";
-  c.FirstNameLen = 3;
-  c.LastName = "Schmoe";
-  c.LastNameLen = 6;
-
-  c.Email = "joe@schmoe.co";
-  c.EmailLen = 13;
+  AllocCopyStr(c.Name, "THE JOE");
+  AllocCopyStr(c.FirstName, "Joe");
+  AllocCopyStr(c.LastName, "Schmoe");
+  AllocCopyStr(c.Email, "joe@schmoe.co");
 
   c.BirthdayDay = 13;
   c.BirthdayMonth = 7;
@@ -35,9 +34,16 @@ int main(int argc, char **argv) {
   int status = contact_write(file, c);
   SDL_RWclose(file);
   if(ff_isOK(status)) {
-    printf("File write OK.\n");
+    printf("File write OK. (%d)\n", status);
+    printf(": %*.*s '%*.*s' %*.*s <%*.*s>\n",
+      (int)(c.FirstNameLen), (int)(c.FirstNameLen), c.FirstName,
+      (int)(c.NameLen), (int)(c.NameLen), c.Name,
+      (int)(c.LastNameLen), (int)(c.LastNameLen), c.LastName,
+      (int)(c.EmailLen), (int)(c.EmailLen), c.Email);
+    contact_free(&c);
   } else {
     printf("File write failed: error %d at field %d\n", ff_errorNo(status), ff_errorField(status));
+    contact_free(&c);
     return status;
   }
 
@@ -45,10 +51,15 @@ int main(int argc, char **argv) {
   status = contact_read(file, &c);
   SDL_RWclose(file);
   if(ff_isOK(status)) {
-    printf("File read OK.\n");
+    printf("File read OK. (%d)\n", status);
+    printf(": %*.*s '%*.*s' %*.*s <%*.*s>\n",
+      (int)(c.FirstNameLen), (int)(c.FirstNameLen), c.FirstName,
+      (int)(c.NameLen), (int)(c.NameLen), c.Name,
+      (int)(c.LastNameLen), (int)(c.LastNameLen), c.LastName,
+      (int)(c.EmailLen), (int)(c.EmailLen), c.Email);
   } else {
     printf("File read failed: error %d at field %d\n", ff_errorNo(status), ff_errorField(status));
   }
-  free_contact(&c);
+  contact_free(&c);
   return status;
 }
