@@ -7,7 +7,7 @@ This tool revolves around definition files, where each defines a unique file
 format or a unique file format version. Each file format has a human-friendly
 name and a namespace used in the generated C code.
 
-For examples of these definition files, check the [tests directory][tests-dir].
+For examples of these definition files, check the [examples directory](examples).
 
 ## Build
 
@@ -20,5 +20,3 @@ zig build
 ```sh
 zig build test
 ```
-
-[tests-dir]: src/tests/
