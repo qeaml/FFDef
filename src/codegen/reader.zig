@@ -87,6 +87,8 @@ fn writeField(namespace: []const u8, field: parse.Field, idx: usize, out: anytyp
             , .{ namespace, field.typ.structName.?, field.name });
         },
     }
+    // TODO: Validate constraints
+    // TODO: Do not store fields with = constraint
 }
 
 fn writeStaticArrayField(namespace: []const u8, field: parse.Field, idx: usize, out: anytype) !void {
