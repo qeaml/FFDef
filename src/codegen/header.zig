@@ -24,44 +24,55 @@ pub fn write(fmt: parse.Format, out: anytype) !void {
     }
 
     try writeStruct(false, fmt.namespace, fmt.namespace, fmt.fields, out);
+
+    try out.print(
+        \\const char *{s}_formaterror(int error);
+        \\
+    , .{fmt.namespace});
 }
 
 fn writeStruct(comptime namespaced: bool, namespace: []const u8, name: []const u8, fields: []parse.Field, out: anytype) !void {
-    _ = try out.write("typedef struct ");
-    if (namespaced) {
-        try out.print("{s}_", .{namespace});
+    { // typedef
+        _ = try out.write("typedef struct ");
+        if (namespaced) {
+            try out.print("{s}_", .{namespace});
+        }
+        try out.print("{s}_{{\n", .{name});
+        for (fields) |f| {
+            try out.writeByte(' ');
+            try writeField(namespace, f, out);
+        }
+        try out.writeByte('}');
+        if (namespaced) {
+            try out.print("{s}_", .{namespace});
+        }
+        try out.print("{s};\n", .{name});
     }
-    try out.print("{s}_{{\n", .{name});
 
-    for (fields) |f| {
-        try out.writeByte(' ');
-        try writeField(namespace, f, out);
+    { // read method
+        _ = try out.write("int ");
+        if (namespaced) {
+            try out.print("{s}_", .{namespace});
+        }
+        try out.print("{s}_read(SDL_RWops *src, ", .{name});
+        if (namespaced) {
+            try out.print("{s}_", .{namespace});
+        }
+        try out.print("{s} *out);\n", .{name});
     }
 
-    try out.writeByte('}');
-    if (namespaced) {
-        try out.print("{s}_", .{namespace});
+    { // write method
+        _ = try out.write("int ");
+        if (namespaced) {
+            try out.print("{s}_", .{namespace});
+        }
+        try out.print("{s}_write(SDL_RWops *out, ", .{name});
+        if (namespaced) {
+            try out.print("{s}_", .{namespace});
+        }
+        try out.print("{s} src);\n", .{name});
     }
-    try out.print(
-        \\{s};
-        \\int 
-    , .{name});
-    if (namespaced) {
-        try out.print("{s}_", .{namespace});
-    }
-    try out.print("{s}_read(SDL_RWops *src, ", .{name});
-    if (namespaced) {
-        try out.print("{s}_", .{namespace});
-    }
-    try out.print("{s} *out);\nint ", .{name});
-    if (namespaced) {
-        try out.print("{s}_", .{namespace});
-    }
-    try out.print("{s}_write(SDL_RWops *out, ", .{name});
-    if (namespaced) {
-        try out.print("{s}_", .{namespace});
-    }
-    try out.print("{s} src);\n", .{name});
+
     try writeNew(namespaced, namespace, name, out);
     try writeFree(namespaced, namespace, name, fields, out);
 }

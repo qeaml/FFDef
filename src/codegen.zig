@@ -1,12 +1,14 @@
 const std = @import("std");
 const parse = @import("parse.zig");
 
-const headerImpl = @import("codegen/header.zig");
-const readerImpl = @import("codegen/reader.zig");
-const writerImpl = @import("codegen/writer.zig");
+const writeHeader = @import("codegen/header.zig").write;
+const writeReader = @import("codegen/reader.zig").write;
+const writeWriter = @import("codegen/writer.zig").write;
+const writeError = @import("codegen/error.zig").write;
 
-pub fn write(fmt: parse.Format, header: anytype, reader: anytype, writer: anytype) !void {
-    try headerImpl.write(fmt, header);
-    try readerImpl.write(fmt, reader);
-    try writerImpl.write(fmt, writer);
+pub fn write(fmt: parse.Format, header: anytype, reader: anytype, writer: anytype, err: anytype) !void {
+    try writeHeader(fmt, header);
+    try writeReader(fmt, reader);
+    try writeWriter(fmt, writer);
+    try writeError(fmt, err);
 }

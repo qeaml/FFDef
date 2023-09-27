@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
   contact c = contact_new();
 
   memcpy(c.Magic, "CONTACT", sizeof(c.Magic));
-  c.Version = 1;
+  c.Version = 2;
 
   AllocCopyStr(c.Name, "THE JOE");
   AllocCopyStr(c.FirstName, "Joe");
@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
       (int)(c.EmailLen), (int)(c.EmailLen), c.Email);
     contact_free(&c);
   } else {
-    printf("File write failed: error %d at field %d\n", ff_errorNo(status), ff_errorField(status));
+    printf("File write failed: %s\n", contact_formaterror(status));
     contact_free(&c);
     return status;
   }
@@ -58,7 +58,7 @@ int main(int argc, char **argv) {
       (int)(c.LastNameLen), (int)(c.LastNameLen), c.LastName,
       (int)(c.EmailLen), (int)(c.EmailLen), c.Email);
   } else {
-    printf("File read failed: error %d at field %d\n", ff_errorNo(status), ff_errorField(status));
+    printf("File read failed: %s\n", contact_formaterror(status));
   }
   contact_free(&c);
   return status;

@@ -3,5 +3,6 @@
 
 /examples/*/*_reader.c
 /examples/*/*_writer.c
+/examples/*/*_error.c
 /examples/*/*.h
 /examples/*/*.exe

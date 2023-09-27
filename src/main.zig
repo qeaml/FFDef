@@ -39,8 +39,10 @@ pub fn main() !void {
     defer reader.deinit();
     var writer = std.ArrayList(u8).init(allocator);
     defer writer.deinit();
+    var err = std.ArrayList(u8).init(allocator);
+    defer err.deinit();
 
-    try codegen.write(format, header.writer(), reader.writer(), writer.writer());
+    try codegen.write(format, header.writer(), reader.writer(), writer.writer(), err.writer());
 
     writeHeader: {
         var headerName = std.ArrayList(u8).fromOwnedSlice(allocator, try allocator.dupe(u8, format.namespace));
@@ -78,6 +80,18 @@ pub fn main() !void {
         };
         writerFile.writer().writeAll(writer.items) catch |e| {
             std.log.err("Could not write to writer implementation file '{s}': {?}", .{ writerName.items, e });
+        };
+    }
+    writeError: {
+        var errorName = std.ArrayList(u8).fromOwnedSlice(allocator, try allocator.dupe(u8, format.namespace));
+        try errorName.appendSlice("_error.c");
+        defer errorName.deinit();
+        const errorFile = root.createFile(errorName.items, .{}) catch |e| {
+            std.log.err("Could not create error implementation file '{s}': {?}", .{ errorName.items, e });
+            break :writeError;
+        };
+        errorFile.writer().writeAll(err.items) catch |e| {
+            std.log.err("Could not write to error implementation file '{s}': {?}", .{ errorName.items, e });
         };
     }
 }
