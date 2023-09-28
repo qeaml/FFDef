@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
   contact c = contact_new();
 
   memcpy(c.Magic, "CONTACT", sizeof(c.Magic));
-  c.Version = 2;
+  c.Version = 1;
 
   AllocCopyStr(c.Name, "THE JOE");
   AllocCopyStr(c.FirstName, "Joe");

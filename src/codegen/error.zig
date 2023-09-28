@@ -43,8 +43,11 @@ fn writeStruct(name: []const u8, fields: []parse.Field, out: anytype) !void {
     _ = try out.write("};\n");
 }
 
-pub const Type = enum(u8) { Write, Read, Constriant };
+pub const Type = enum(u8) { Write = 0, Read = 1, Constraint = 2 };
 
-pub fn compose(typ: Type, structIdx: u8, fieldIdx: u8) i32 {
-    return -(typ | (structIdx << 8) | (fieldIdx << 16));
+pub fn compose(typ: Type, structIdx: usize, fieldIdx: usize) i32 {
+    const typeMask = @as(i32, @intFromEnum(typ));
+    const structMask = @as(i32, @intCast((structIdx & 0xFF) << 8));
+    const fieldMask = @as(i32, @intCast((fieldIdx & 0xFF) << 16));
+    return -(typeMask | structMask | fieldMask);
 }
