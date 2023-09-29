@@ -1,5 +1,6 @@
 const std = @import("std");
 const lex = @import("lex.zig");
+const diag = @import("diag.zig");
 
 pub const Error = error{
     NoName, // no Format directive was found
@@ -22,6 +23,8 @@ pub const Error = error{
     ExpectedStructName, // expected name of struct
     ExpectedStructFieldList, // expected list of struct fields
     ExpectedStructField, // expected field in struct
+    MismatchedArrayConstraintSize,
+    ConstrainedDynamicArray,
 };
 
 pub const Datatype = enum {
@@ -33,10 +36,12 @@ pub const Datatype = enum {
 };
 
 pub const QualType = struct {
+    pos: lex.SourcePos,
     datatype: Datatype,
     isSigned: bool = false,
     isArray: bool = false,
     arraySizeKnown: bool = false,
+    inferArraySize: bool = false,
     arraySize: union {
         ref: []const u8,
         size: usize,
@@ -44,18 +49,24 @@ pub const QualType = struct {
     structName: ?[]const u8 = null,
 };
 
-pub const Constraint = struct { op: lex.Operator, val: union {
-    str: []const u8,
-    int: isize,
-} };
+pub const Constraint = struct {
+    pos: lex.SourcePos,
+    op: lex.Operator,
+    val: union {
+        str: []const u8,
+        int: isize,
+    },
+};
 
 pub const Field = struct {
+    pos: lex.SourcePos,
     name: []const u8,
     typ: QualType,
     constraint: ?Constraint = null,
 };
 
 pub const Struct = struct {
+    pos: lex.SourcePos,
     name: []const u8,
     fields: []Field,
 };
@@ -121,30 +132,33 @@ const State = struct {
                 return true;
             },
             .String => |s| {
-                const field = try self.parseField(s);
+                const field = try self.parseField(token.?.pos, s);
                 try self.fields.append(field);
                 return true;
             },
-            else => return Error.ExpectedFieldOrDirective,
+            else => {
+                diag.err("Expected a field or directive, but found {?} instead.", .{token.?.data}, token.?.pos);
+                return Error.ExpectedFieldOrDirective;
+            },
         }
     }
 
-    fn parseField(self: Self, name: []const u8) !Field {
+    fn parseField(self: Self, pos: lex.SourcePos, name: []const u8) !Field {
         var qualtype = try self.parseQualType();
 
         const maybeOp = self.gettok();
         if (maybeOp == null) {
-            return .{ .name = name, .typ = qualtype };
+            return .{ .pos = pos, .name = name, .typ = qualtype };
         }
         const constraint = switch (maybeOp.?.data) {
-            .Operator => |o| try self.parseConstraint(&qualtype, o),
+            .Operator => |o| try self.parseConstraint(&qualtype, maybeOp.?.pos, o),
             else => {
                 self.offset -= 1;
-                return .{ .name = name, .typ = qualtype };
+                return .{ .pos = pos, .name = name, .typ = qualtype };
             },
         };
 
-        return .{ .name = name, .typ = qualtype, .constraint = constraint };
+        return .{ .pos = pos, .name = name, .typ = qualtype, .constraint = constraint };
     }
 
     fn parseQualType(self: Self) !QualType {
@@ -152,10 +166,12 @@ const State = struct {
 
         var primTok = self.gettok();
         if (primTok == null) {
+            diag.err("Expected a typename.", .{}, self.prevtok().pos);
             return Error.ExpectedTypename;
         }
 
         var qt = QualType{
+            .pos = primTok.?.pos,
             .datatype = undefined,
         };
         switch (primTok.?.data) {
@@ -168,6 +184,7 @@ const State = struct {
                     qt.datatype = .Byte;
                     qt.isSigned = signedOverride orelse false;
                     qt.isArray = true;
+                    qt.inferArraySize = true;
                 },
                 .Char => {
                     qt.datatype = .Byte;
@@ -203,7 +220,7 @@ const State = struct {
                 qt.structName = s;
             },
             else => |d| {
-                std.debug.print("Invalid typename: {?}\n", .{d});
+                diag.err("Expected a typename or a struct name, but found {?} instead.", .{d}, primTok.?.pos);
                 return Error.ExpectedTypename;
             },
         }
@@ -223,6 +240,7 @@ const State = struct {
             .Modifier => |m| switch (m) {
                 .Array => {
                     if (qualtype.isArray) {
+                        diag.err("Multidimensional arrays are not supported.", .{}, mod.?.pos);
                         return Error.ArrayOfArrays;
                     }
                     qualtype.isArray = true;
@@ -240,11 +258,19 @@ const State = struct {
 
         const leftParen = self.gettok();
         if (leftParen == null) {
+            diag.err("Expected a '(' to define array size.", .{}, mod.?.pos);
             return Error.ExpectedArraySize;
         }
 
         const extent = self.gettok();
         if (extent == null) {
+            diag.errWithTip(
+                "Expected a valid array size.",
+                .{},
+                "You may use an integer to define a static size, or use a string with a field's name to define a dynamic size.",
+                .{},
+                leftParen.?.pos,
+            );
             return Error.ExpectedArraySize;
         }
 
@@ -255,19 +281,33 @@ const State = struct {
             },
             .Integer => |i| {
                 if (i <= 1) {
+                    diag.errWithTip(
+                        "Array size must be at least 2.",
+                        .{},
+                        "An array of size 0 is invalid and an array of size 1 is pointless.",
+                        .{},
+                        extent.?.pos,
+                    );
                     return Error.InvalidArraySize;
                 }
                 qualtype.arraySizeKnown = true;
                 qualtype.arraySize = .{ .size = @intCast(i) };
             },
             else => |d| {
-                std.debug.print("Invalid array size: {?}\n", .{d});
+                diag.errWithTip(
+                    "Expected a valid array size, but found {?} instead.",
+                    .{d},
+                    "You may use an integer to define a static size, or use a string with a field's name to define a dynamic size.",
+                    .{},
+                    extent.?.pos,
+                );
                 return Error.InvalidArraySize;
             },
         }
 
         const rightParen = self.gettok();
         if (rightParen == null) {
+            diag.err("Expected a ')' to end array size definition.", .{}, extent.?.pos);
             return Error.ArraySizeNotClosed;
         }
     }
@@ -275,6 +315,7 @@ const State = struct {
     fn parseSignednessModifier(self: Self) !?bool {
         const tok = self.gettok();
         if (tok == null) {
+            diag.err("Expected a typename.", .{}, self.prevtok().pos);
             return Error.ExpectedSignedOrUnsigned;
         }
 
@@ -282,7 +323,16 @@ const State = struct {
             .Modifier => |m| return switch (m) {
                 .Signed => true,
                 .Unsigned => false,
-                else => return Error.ExpectedSignedOrUnsigned,
+                else => {
+                    diag.errWithTip(
+                        "The modifier {?} cannot appear here.",
+                        .{m},
+                        "Only `unsigned` and `signed` may be used before the typename.",
+                        .{},
+                        tok.?.pos,
+                    );
+                    return Error.ExpectedSignedOrUnsigned;
+                },
             },
             else => {
                 self.offset -= 1;
@@ -291,37 +341,100 @@ const State = struct {
         }
     }
 
-    fn parseConstraint(self: Self, qualtype: *QualType, op: lex.Operator) !Constraint {
+    fn parseConstraint(self: Self, qualtype: *QualType, pos: lex.SourcePos, op: lex.Operator) !Constraint {
         const value = self.gettok();
         if (value == null) {
+            diag.errWithTip(
+                "Expected a constraint value.",
+                .{},
+                "You may use an integer or a string for a byte array.",
+                .{},
+                self.prevtok().pos,
+            );
             return Error.ExpectedConstraintValue;
         }
 
         if (qualtype.isArray) {
-            if (op != lex.Operator.Equal and op != lex.Operator.NotEqual) {
+            if (op != lex.Operator.Equal) {
+                diag.errWithTip(
+                    "The constraint '{s}' cannot be used with arrays.",
+                    .{op.name()},
+                    "Only the '=' constraint may be used on (byte) arrays.",
+                    .{},
+                    value.?.pos,
+                );
                 return Error.ArrayComparativeConstraint;
             }
             if (qualtype.datatype != Datatype.Byte) {
+                diag.errWithTip(
+                    "Constraints cannot be applied to {?} arrays.",
+                    .{qualtype.datatype},
+                    "Only byte arrays can be constrained (to string values).",
+                    .{},
+                    value.?.pos,
+                );
                 return Error.ConstrainedArrayNotString;
             }
 
             const str = switch (value.?.data) {
                 .String => |s| s,
-                else => return Error.ConstrainedArrayNotString,
+                else => {
+                    diag.err("Arrays can only be constrained to a string.", .{}, value.?.pos);
+                    return Error.ConstrainedArrayNotString;
+                },
             };
 
-            if (!qualtype.arraySizeKnown and op == lex.Operator.Equal) {
+            if (qualtype.inferArraySize) {
                 qualtype.arraySizeKnown = true;
                 qualtype.arraySize.size = str.len;
+            } else if (qualtype.arraySizeKnown) {
+                if (qualtype.arraySize.size < str.len) {
+                    diag.errWithTip(
+                        "Array is too small for the constraint. ({d} < {d})",
+                        .{ qualtype.arraySize.size, str.len },
+                        "Use `bytes`, which infers its size from constraint values. ({d} here)",
+                        .{str.len},
+                        qualtype.pos,
+                    );
+                    return Error.MismatchedArrayConstraintSize;
+                } else if (qualtype.arraySize.size > str.len) {
+                    diag.warnWithTip(
+                        "Array is larger than constraint. ({d} > {d})",
+                        .{ qualtype.arraySize.size, str.len },
+                        "Use `bytes`, which infers its size from constraint values. ({d} here)",
+                        .{str.len},
+                        qualtype.pos,
+                    );
+                } else {
+                    diag.noteWithTip(
+                        "Use `bytes` here.",
+                        .{},
+                        "`bytes` infers its size from constraint values. ({d} here)",
+                        .{str.len},
+                        qualtype.pos,
+                    );
+                }
+            } else {
+                diag.errWithTip(
+                    "Cannot constrain dynamic arrays.",
+                    .{},
+                    "If you want to infer the array size, use `bytes`.",
+                    .{},
+                    qualtype.pos,
+                );
+                return Error.ConstrainedDynamicArray;
             }
 
-            return .{ .op = op, .val = .{ .str = str } };
+            return .{ .pos = pos, .op = op, .val = .{ .str = str } };
         }
 
-        return switch (value.?.data) {
-            .Integer => |i| .{ .op = op, .val = .{ .int = i } },
-            else => Error.FieldConstraintNotInteger,
-        };
+        switch (value.?.data) {
+            .Integer => |i| return .{ .pos = pos, .op = op, .val = .{ .int = i } },
+            else => {
+                diag.err("{?} field can only be constrained to an integer.", .{qualtype.datatype}, value.?.pos);
+                return Error.FieldConstraintNotInteger;
+            },
+        }
     }
 
     fn parseDirective(self: Self, directive: lex.Directive) !void {
@@ -334,55 +447,74 @@ const State = struct {
 
     fn parseFormatDirective(self: Self) !void {
         if (self.name != null) {
+            diag.err("More than one Format directive.", .{}, null);
             return Error.MultipleNames;
         }
 
         const nameTok = self.gettok();
         if (nameTok == null) {
+            diag.err("Expected string for file format name.", .{}, self.prevtok().pos);
             return Error.ExpectedNameString;
         }
         switch (nameTok.?.data) {
             .String => |s| self.name = s,
-            else => return Error.ExpectedNameString,
+            else => |d| {
+                diag.err("Expected string for file format name, but found {?} instead.", .{d}, nameTok.?.pos);
+                return Error.ExpectedNameString;
+            },
         }
     }
 
     fn parseNamespaceDirective(self: Self) !void {
         if (self.namespace != null) {
+            diag.errWithTip("More than one Namespace directive.", .{}, "It is necessary to avoid name collisions in the generated code.", .{}, null);
             return Error.MultipleNamespaces;
         }
 
         const namespaceTok = self.gettok();
         if (namespaceTok == null) {
+            diag.err("Expected string for namespace.", .{}, self.prevtok().pos);
             return Error.ExpectedNamespaceString;
         }
         switch (namespaceTok.?.data) {
             .String => |s| self.namespace = s,
-            else => return Error.ExpectedNamespaceString,
+            else => |d| {
+                diag.err("Expected string for namespace, but got {?} instead.", .{d}, namespaceTok.?.pos);
+                return Error.ExpectedNamespaceString;
+            },
         }
     }
 
     fn parseStructDirective(self: Self) !void {
         const nameTok = self.gettok();
         if (nameTok == null) {
+            diag.err("Expected string for struct name.", .{}, self.prevtok().pos);
             return Error.ExpectedStructName;
         }
         const name = switch (nameTok.?.data) {
             .String => |s| s,
-            else => return Error.ExpectedStructName,
+            else => |d| {
+                diag.err("Expected string for struct name, but got {?} instead.", .{d}, nameTok.?.pos);
+                return Error.ExpectedStructName;
+            },
         };
 
         const leftParen = self.gettok();
         if (leftParen == null) {
+            diag.err("Expected '(' to begin struct field list.", .{}, self.prevtok().pos);
             return Error.ExpectedStructFieldList;
         }
         switch (leftParen.?.data) {
             .Punctuator => |p| {
                 if (p != .LeftParen) {
+                    diag.err("Expected '(' to begin struct field list, but found {?} insetead.", .{p}, leftParen.?.pos);
                     return Error.ExpectedStructFieldList;
                 }
             },
-            else => return Error.ExpectedStructFieldList,
+            else => |d| {
+                diag.err("Expected '(' to begin struct field list, but found {?} instead.", .{d}, leftParen.?.pos);
+                return Error.ExpectedStructFieldList;
+            },
         }
 
         var fields = std.ArrayList(Field).init(self.allocator);
@@ -390,6 +522,7 @@ const State = struct {
         while (true) {
             const token = self.gettok();
             if (token == null) {
+                diag.err("Expected a field in structure.", .{}, self.prevtok().pos);
                 return Error.ExpectedStructField;
             }
             const fieldName = switch (token.?.data) {
@@ -397,15 +530,19 @@ const State = struct {
                     if (p == .RightParen) {
                         break;
                     }
+                    diag.err("Expected structure field name, but found {?} instead.", .{p}, token.?.pos);
                     return Error.ExpectedNameString;
                 },
                 .String => |s| s,
-                else => return Error.ExpectedNameString,
+                else => |d| {
+                    diag.err("Expected structure field name, but found {?} instead.", .{d}, token.?.pos);
+                    return Error.ExpectedNameString;
+                },
             };
-            try fields.append(try self.parseField(fieldName));
+            try fields.append(try self.parseField(token.?.pos, fieldName));
         }
 
-        try self.structs.append(.{ .name = name, .fields = try fields.toOwnedSlice() });
+        try self.structs.append(.{ .pos = nameTok.?.pos, .name = name, .fields = try fields.toOwnedSlice() });
     }
 
     fn has(self: Self) bool {
@@ -421,6 +558,10 @@ const State = struct {
         self.offset += 1;
         return token;
     }
+
+    fn prevtok(self: Self) lex.Token {
+        return self.tokens[self.offset - 2];
+    }
 };
 
 pub fn all(allocator: std.mem.Allocator, filename: []const u8, source: []const u8) !Format {
@@ -434,10 +575,12 @@ pub fn all(allocator: std.mem.Allocator, filename: []const u8, source: []const u
     }
 
     if (state.name == null) {
+        diag.err("File format has no name.", .{}, null);
         return Error.NoName;
     }
 
     if (state.namespace == null) {
+        diag.err("File format has no namespace.", .{}, null);
         return Error.NoNamespace;
     }
 

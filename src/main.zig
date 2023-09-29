@@ -1,6 +1,7 @@
 const std = @import("std");
 const parse = @import("parse.zig");
 const codegen = @import("codegen.zig");
+const diag = @import("diag.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -32,7 +33,10 @@ pub fn main() !void {
     };
     defer allocator.free(source);
 
-    const format = try parse.all(allocator, filename, source);
+    const format = parse.all(allocator, filename, source) catch |e| {
+        diag.err("Could not parse {s} due to error: {?}.", .{ filename, e }, null);
+        return;
+    };
     var header = std.ArrayList(u8).init(allocator);
     defer header.deinit();
     var reader = std.ArrayList(u8).init(allocator);

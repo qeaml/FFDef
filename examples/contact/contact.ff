@@ -1,12 +1,12 @@
 Format "Contact Info"
 Namespace "contact"
 
-"Magic" bytes = "CONTACT"
+"Magic" byte array(15) = "CONTACT"
 "Version" byte = 1
 
 # this is required as a display name
 "NameLen" byte > 0
-"Name" byte array("NameLen")
+"Name" byte array("NameLen") = "POOPER"
 
 # first and last name are optional
 "FirstNameLen" byte

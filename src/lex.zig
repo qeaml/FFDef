@@ -1,4 +1,5 @@
 const std = @import("std");
+const diag = @import("diag.zig");
 
 pub const Error = error{
     IllegalCharacter, // illegal character
@@ -19,6 +20,17 @@ pub const Operator = enum {
     NotEqual,
     Greater,
     Lesser,
+
+    pub fn name(op: Operator) []const u8 {
+        return switch (op) {
+            .Equal => "=",
+            .GreaterEqual => ">=",
+            .LesserEqual => "<=",
+            .NotEqual => "!=",
+            .Greater => ">",
+            .Lesser => "<",
+        };
+    }
 };
 
 pub const Directive = enum { Format, Namespace, Struct };
@@ -159,17 +171,22 @@ const State = struct {
             '!' => {
                 const c2 = self.getc();
                 if (c2 == null) {
+                    diag.err("Expected an '=' to follow '!'.", .{}, pos);
                     return Error.ExpectedNotEqual;
                 }
                 if (c2.? == '=') {
                     return .{ .pos = pos, .data = .{ .Operator = .NotEqual } };
                 }
+                diag.err("Expected an '=' to follow '!', but found '{c}' instead.", .{c2.?}, pos);
                 return Error.ExpectedNotEqual;
             },
             '"', '\'', '`' => return try self.parseString(pos, c.?),
             '0'...'9' => return try self.parseInteger(pos),
             'a'...'z', 'A'...'Z' => return try self.parseIdent(pos),
-            else => return Error.IllegalCharacter,
+            else => {
+                diag.err("Illegal character: '{c}'.", .{c.?}, pos);
+                return Error.IllegalCharacter;
+            },
         }
     }
 
@@ -182,6 +199,7 @@ const State = struct {
                 break;
             }
             if (c == null) {
+                diag.err("Unterminated string literal.", .{}, pos);
                 return Error.UnterminatedString;
             }
         }
@@ -274,6 +292,17 @@ const State = struct {
         if (std.mem.eql(u8, ident, "array")) {
             return .{ .pos = pos, .data = .{ .Modifier = .Array } };
         }
+        if (findNearestMatch(ident)) |match| {
+            diag.errWithTip(
+                "`{s}` is not a valid directive, typename or modifier.",
+                .{ident},
+                "The closest match is `{s}`.",
+                .{match},
+                pos,
+            );
+        } else {
+            diag.err("`{s}` is not a valid directive, typename or modifier.", .{ident}, pos);
+        }
         return Error.UnknownDirective;
     }
 
@@ -357,6 +386,54 @@ const State = struct {
         self.pos = self.prevPos;
     }
 };
+
+const identifiers = [_][]const u8{
+    "Format",
+    "Namespace",
+    "Struct",
+    "byte",
+    "bytes",
+    "char",
+    "word",
+    "short",
+    "dword",
+    "int",
+    "qword",
+    "long",
+    "signed",
+    "unsigned",
+    "array",
+};
+
+fn findNearestMatch(ident: []const u8) ?[]const u8 {
+    var nearest: ?[]const u8 = null;
+    var nearestDiff: usize = ident.len;
+
+    inline for (identifiers) |known| {
+        const diff = strDiff(known, ident);
+        if (diff < ident.len / 2 and diff < nearestDiff) {
+            nearestDiff = diff;
+            nearest = known;
+        }
+    }
+
+    return nearest;
+}
+
+fn strDiff(a: []const u8, b: []const u8) usize {
+    var diff: usize = 0;
+    const shorterWord = if (a.len <= b.len) a else b;
+    const longerWord = if (a.len > b.len) a else b;
+
+    for (shorterWord, 0..) |ca, i| {
+        const cb = longerWord[i];
+        if (ca != cb) {
+            diff += 1;
+        }
+    }
+
+    return diff;
+}
 
 test "whitespace" {
     var state = State.new("test", "\t   \t  \n \n \r\n   \t \t\r");

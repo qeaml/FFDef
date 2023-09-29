@@ -1,0 +1,12 @@
+# This file intentionally does not parse.
+# It is used to test whether the diagnostic output works correctly.
+
+Format "test v7"
+Namespace "test_v7"
+
+"Magic" byte array(7) = "TESTFIL"
+"Version" byte = 7
+
+"A" byte array(10) = "Hello"
+"B" byte
+"C" byte array("B") = "World"
