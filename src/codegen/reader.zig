@@ -2,6 +2,7 @@ const std = @import("std");
 const parse = @import("../parse.zig");
 const version = @import("../version.zig").current;
 const err = @import("error.zig");
+const common = @import("common.zig");
 
 pub fn write(fmt: parse.Format, out: anytype) !void {
     try out.print(
@@ -36,13 +37,20 @@ fn writeStruct(comptime namespaced: bool, namespace: []const u8, name: []const u
 }
 
 fn writeField(namespace: []const u8, field: parse.Field, structIdx: usize, idx: usize, out: anytype) !void {
+    if (field.constraint) |cons| {
+        if (cons.op == .Equal) {
+            return writeConst(namespace, field, structIdx, idx, cons, out);
+        }
+    }
+    return writeVar(namespace, field, structIdx, idx, out);
+}
+
+fn writeVar(namespace: []const u8, field: parse.Field, structIdx: usize, idx: usize, out: anytype) !void {
     if (field.typ.isArray) {
         if (field.typ.arraySizeKnown) {
-            try writeStaticArrayField(namespace, field, structIdx, idx, out);
-            return;
+            return writeVarStaticArray(namespace, field, structIdx, idx, out);
         }
-        try writeDynArrayField(namespace, field, structIdx, idx, out);
-        return;
+        return writeVarDynArray(namespace, field, structIdx, idx, out);
     }
 
     switch (field.typ.datatype) {
@@ -89,13 +97,62 @@ fn writeField(namespace: []const u8, field: parse.Field, structIdx: usize, idx: 
     }
 
     if (field.constraint) |c| {
-        try writeFieldConstraint(c, field, structIdx, idx, out);
+        try writeVarConstraint(c, field, structIdx, idx, out);
     }
-
-    // TODO: Do not store fields with = constraint
 }
 
-fn writeStaticArrayField(namespace: []const u8, field: parse.Field, structIdx: usize, idx: usize, out: anytype) !void {
+fn writeConst(namespace: []const u8, field: parse.Field, structIdx: usize, idx: usize, cons: parse.Constraint, out: anytype) !void {
+    try out.writeByte(' ');
+    try common.writeFieldDecl(namespace, field, out, false);
+
+    if (field.typ.isArray) {
+        return writeConstArray(namespace, field, structIdx, idx, cons, out);
+    }
+
+    switch (field.typ.datatype) {
+        .Byte => try out.print(
+            \\ if(SDL_RWread(src, &{s}, 1, 1) != 1) {{
+            \\  return {d};
+            \\ }}
+            \\
+        , .{ field.name, err.compose(.Read, structIdx, idx) }),
+        .Short => try out.print(
+            \\ if(SDL_RWread(src, &{s}, 2, 1) != 1) {{
+            \\  return {d};
+            \\ }}
+            \\
+        , .{ field.name, err.compose(.Read, structIdx, idx) }),
+        .Int => try out.print(
+            \\ if(SDL_RWread(src, &{s}, 4, 1) != 1) {{
+            \\  return {d};
+            \\ }}
+            \\
+        , .{ field.name, err.compose(.Read, structIdx, idx) }),
+        .Long => try out.print(
+            \\ if(SDL_RWread(src, &{s}, 8, 1) != 1) {{
+            \\  return {d};
+            \\ }}
+            \\
+        , .{ field.name, err.compose(.Read, structIdx, idx) }),
+        .Struct => {
+            try out.print(
+                \\ if((status = {s}_{s}_read(src, &{s})) < 0) {{
+                \\  return status;
+                \\ }}
+                \\
+            , .{ namespace, field.typ.structName.?, field.name });
+        },
+    }
+
+    try out.print(
+        \\ if({s} != {d}) {{
+        \\  return {d};
+        \\ }}
+        \\
+    , .{ field.name, cons.val.int, err.compose(.Constraint, structIdx, idx) });
+}
+
+fn writeVarStaticArray(namespace: []const u8, field: parse.Field, structIdx: usize, idx: usize, out: anytype) !void {
     switch (field.typ.datatype) {
         .Byte => {
             try out.print(
@@ -109,10 +166,6 @@ fn writeStaticArrayField(namespace: []const u8, field: parse.Field, structIdx: u
                 field.typ.arraySize.size,
                 err.compose(.Read, structIdx, idx),
             });
-
-            if (field.constraint) |c| {
-                try writeByteArrayConstraint(c, field, structIdx, idx, out);
-            }
         },
         .Short => {
             try out.print(
@@ -166,7 +219,7 @@ fn writeStaticArrayField(namespace: []const u8, field: parse.Field, structIdx: u
     }
 }
 
-fn writeDynArrayField(namespace: []const u8, field: parse.Field, structIdx: usize, idx: usize, out: anytype) !void {
+fn writeVarDynArray(namespace: []const u8, field: parse.Field, structIdx: usize, idx: usize, out: anytype) !void {
     switch (field.typ.datatype) {
         .Byte => {
             try out.print(
@@ -255,7 +308,7 @@ fn writeDynArrayField(namespace: []const u8, field: parse.Field, structIdx: usiz
     }
 }
 
-fn writeFieldConstraint(cons: parse.Constraint, field: parse.Field, structIdx: usize, idx: usize, out: anytype) !void {
+fn writeVarConstraint(cons: parse.Constraint, field: parse.Field, structIdx: usize, idx: usize, out: anytype) !void {
     switch (cons.op) {
         .Equal => try out.print(
             \\ if(out->{s} != {d}) {{
@@ -296,13 +349,26 @@ fn writeFieldConstraint(cons: parse.Constraint, field: parse.Field, structIdx: u
     }
 }
 
-fn writeByteArrayConstraint(cons: parse.Constraint, field: parse.Field, structIdx: usize, idx: usize, out: anytype) !void {
-    for (cons.val.str, 0..) |ch, i| {
+fn writeConstArray(namespace: []const u8, field: parse.Field, structIdx: usize, idx: usize, cons: parse.Constraint, out: anytype) !void {
+    _ = namespace;
+    try out.print(
+        \\ if(SDL_RWread(src, &{s}, 1, {d}) != {d}) {{
+        \\  return {d};
+        \\ }}
+        \\
+    , .{
+        field.name,
+        cons.val.str.len,
+        cons.val.str.len,
+        err.compose(.Read, structIdx, idx),
+    });
+
+    for (cons.val.str, 0..) |c, i| {
         try out.print(
-            \\ if(out->{s}[{d}] != '{c}') {{
+            \\ if({s}[{d}] != '{c}') {{
             \\  return {d};
             \\ }}
             \\
-        , .{ field.name, i, ch, err.compose(.Constraint, structIdx, idx) });
+        , .{ field.name, i, c, err.compose(.Constraint, structIdx, idx) });
     }
 }

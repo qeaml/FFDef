@@ -46,7 +46,10 @@ pub fn main() !void {
     var err = std.ArrayList(u8).init(allocator);
     defer err.deinit();
 
-    try codegen.write(format, header.writer(), reader.writer(), writer.writer(), err.writer());
+    codegen.write(format, header.writer(), reader.writer(), writer.writer(), err.writer()) catch |e| {
+        diag.err("Could not generate implementation for {s} due to error: {?}.", .{ filename, e }, null);
+        return;
+    };
 
     writeHeader: {
         var headerName = std.ArrayList(u8).fromOwnedSlice(allocator, try allocator.dupe(u8, format.namespace));

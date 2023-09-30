@@ -11,13 +11,13 @@ const char *{s}_formaterror(int error) {{
   const unsigned int struct_idx = (error_unsigned >> 8) & 0xFF;
   const unsigned int field_idx = (error_unsigned >> 16) & 0xFF;
   switch(error_type) {{
-  case 0x00:
+  case 0x01:
     mainFormat = "Could not write field '%s' of '%s'.";
     break;
-  case 0x01:
+  case 0x02:
     mainFormat = "Could not read field '%s' of '%s'.";
     break;
-  case 0x02:
+  case 0x03:
     mainFormat = "Invalid value for field '%s' of '%s'.";
     break;
   default:

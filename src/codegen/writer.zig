@@ -1,6 +1,8 @@
 const std = @import("std");
 const parse = @import("../parse.zig");
 const version = @import("../version.zig").current;
+const err = @import("error.zig");
+const common = @import("common.zig");
 
 pub fn write(fmt: parse.Format, out: anytype) !void {
     try out.print(
@@ -9,14 +11,14 @@ pub fn write(fmt: parse.Format, out: anytype) !void {
         \\
     , .{ version.major, version.minor, version.patch, fmt.namespace });
 
-    for (fmt.structs) |s| {
-        try writeStruct(true, fmt.namespace, s.name, s.fields, out);
+    for (fmt.structs, 0..) |s, i| {
+        try writeStruct(true, fmt.namespace, s.name, s.fields, i + 1, out);
     }
 
-    try writeStruct(false, fmt.namespace, fmt.namespace, fmt.fields, out);
+    try writeStruct(false, fmt.namespace, fmt.namespace, fmt.fields, 0, out);
 }
 
-fn writeStruct(comptime namespaced: bool, namespace: []const u8, name: []const u8, fields: []parse.Field, out: anytype) !void {
+fn writeStruct(comptime namespaced: bool, namespace: []const u8, name: []const u8, fields: []parse.Field, structIdx: usize, out: anytype) !void {
     _ = try out.write("int ");
     if (namespaced) {
         try out.print("{s}_", .{namespace});
@@ -28,55 +30,124 @@ fn writeStruct(comptime namespaced: bool, namespace: []const u8, name: []const u
     try out.print("{s} src) {{\n int status;\n", .{name});
 
     for (fields, 0..) |field, idx| {
-        try out.writeByte(' ');
-        try writeField(namespace, field, idx, out);
+        try writeField(namespace, field, structIdx, idx, out);
     }
 
     _ = try out.write(" return 0;\n}\n");
 }
 
-fn writeField(namespace: []const u8, field: parse.Field, idx: usize, out: anytype) !void {
-    if (field.typ.isArray) {
-        if (field.typ.arraySizeKnown) {
-            try writeStaticArrayField(namespace, field, idx, out);
-            return;
+fn writeField(namespace: []const u8, field: parse.Field, structIdx: usize, idx: usize, out: anytype) !void {
+    if (field.constraint) |cons| {
+        if (cons.op == .Equal) {
+            return writeConst(namespace, field, structIdx, idx, cons, out);
         }
-        try writeDynArrayField(namespace, field, idx, out);
+    }
+    return writeVar(namespace, field, structIdx, idx, out);
+}
+
+fn writeConst(namespace: []const u8, field: parse.Field, structIdx: usize, idx: usize, cons: parse.Constraint, out: anytype) !void {
+    try out.writeByte(' ');
+    try common.writeFieldDecl(namespace, field, out, true);
+
+    if (field.typ.isArray) {
+        try out.print(
+            \\ if(SDL_RWwrite(out, {s}, 1, {d}) != {d}) {{
+            \\  return {d};
+            \\ }}
+            \\
+        , .{
+            field.name,
+            cons.val.str.len,
+            cons.val.str.len,
+            err.compose(.Write, structIdx, idx),
+        });
         return;
     }
 
     switch (field.typ.datatype) {
         .Byte => {
             try out.print(
-                \\if(SDL_RWwrite(out, &src.{s}, 1, 1) != 1) {{
-                \\  return -{d};
+                \\ if(SDL_RWwrite(out, &{s}, 1, 1) != 1) {{
+                \\  return {d};
                 \\ }}
                 \\
-            , .{ field.name, 0x100 + idx });
+            , .{ field.name, err.compose(.Write, structIdx, idx) });
         },
         .Short => {
             try out.print(
-                \\if(SDL_RWwrite(out, &src.{s}, 2, 1) != 1) {{
-                \\  return -{d};
+                \\ if(SDL_RWwrite(out, &{s}, 2, 1) != 1) {{
+                \\  return {d};
                 \\ }}
                 \\
-            , .{ field.name, 0x100 + idx });
+            , .{ field.name, err.compose(.Write, structIdx, idx) });
         },
         .Int => {
             try out.print(
-                \\if(SDL_RWwrite(out, &src.{s}, 4, 1) != 1) {{
-                \\  return -{d};
+                \\ if(SDL_RWwrite(out, &{s}, 4, 1) != 1) {{
+                \\  return {d};
                 \\ }}
                 \\
-            , .{ field.name, 0x100 + idx });
+            , .{ field.name, err.compose(.Write, structIdx, idx) });
         },
         .Long => {
             try out.print(
-                \\if(SDL_RWwrite(out, &src.{s}, 8, 1) != 1) {{
-                \\  return -{d};
+                \\ if(SDL_RWwrite(out, &{s}, 8, 1) != 1) {{
+                \\  return {d};
                 \\ }}
                 \\
-            , .{ field.name, 0x100 + idx });
+            , .{ field.name, err.compose(.Write, structIdx, idx) });
+        },
+        .Struct => {
+            try out.print(
+                \\if((status = {s}_{s}_write(out, {s})) < 0) {{
+                \\  return status;
+                \\ }}
+                \\
+            , .{ namespace, field.typ.structName.?, field.name });
+        },
+    }
+}
+
+fn writeVar(namespace: []const u8, field: parse.Field, structIdx: usize, idx: usize, out: anytype) !void {
+    if (field.typ.isArray) {
+        if (field.typ.arraySizeKnown) {
+            return writeVarStaticArray(namespace, field, structIdx, idx, out);
+        }
+        return writeVarDynArray(namespace, field, structIdx, idx, out);
+    }
+
+    switch (field.typ.datatype) {
+        .Byte => {
+            try out.print(
+                \\ if(SDL_RWwrite(out, &src.{s}, 1, 1) != 1) {{
+                \\  return {d};
+                \\ }}
+                \\
+            , .{ field.name, err.compose(.Write, structIdx, idx) });
+        },
+        .Short => {
+            try out.print(
+                \\ if(SDL_RWwrite(out, &src.{s}, 2, 1) != 1) {{
+                \\  return {d};
+                \\ }}
+                \\
+            , .{ field.name, err.compose(.Write, structIdx, idx) });
+        },
+        .Int => {
+            try out.print(
+                \\ if(SDL_RWwrite(out, &src.{s}, 4, 1) != 1) {{
+                \\  return {d};
+                \\ }}
+                \\
+            , .{ field.name, err.compose(.Write, structIdx, idx) });
+        },
+        .Long => {
+            try out.print(
+                \\ if(SDL_RWwrite(out, &src.{s}, 8, 1) != 1) {{
+                \\  return {d};
+                \\ }}
+                \\
+            , .{ field.name, err.compose(.Write, structIdx, idx) });
         },
         .Struct => {
             try out.print(
@@ -89,58 +160,58 @@ fn writeField(namespace: []const u8, field: parse.Field, idx: usize, out: anytyp
     }
 }
 
-fn writeStaticArrayField(namespace: []const u8, field: parse.Field, idx: usize, out: anytype) !void {
+fn writeVarStaticArray(namespace: []const u8, field: parse.Field, structIdx: usize, idx: usize, out: anytype) !void {
     switch (field.typ.datatype) {
         .Byte => {
             try out.print(
-                \\if(SDL_RWwrite(out, src.{s}, 1, {d}) != {d}) {{
-                \\  return -{d};
+                \\ if(SDL_RWwrite(out, src.{s}, 1, {d}) != {d}) {{
+                \\  return {d};
                 \\ }}
                 \\
             , .{
                 field.name,
                 field.typ.arraySize.size,
                 field.typ.arraySize.size,
-                0x100 + idx,
+                err.compose(.Write, structIdx, idx),
             });
         },
         .Short => {
             try out.print(
-                \\if(SDL_RWwrite(out, src.{s}, 2, {d}) != {d}) {{
-                \\  return -{d};
+                \\ if(SDL_RWwrite(out, src.{s}, 2, {d}) != {d}) {{
+                \\  return {d};
                 \\ }}
                 \\
             , .{
                 field.name,
                 field.typ.arraySize.size,
                 field.typ.arraySize.size,
-                0x100 + idx,
+                err.compose(.Write, structIdx, idx),
             });
         },
         .Int => {
             try out.print(
-                \\if(SDL_RWwrite(out, src.{s}, 4, {d}) != {d}) {{
-                \\  return -{d};
+                \\ if(SDL_RWwrite(out, src.{s}, 4, {d}) != {d}) {{
+                \\  return {d};
                 \\ }}
                 \\
             , .{
                 field.name,
                 field.typ.arraySize.size,
                 field.typ.arraySize.size,
-                0x100 + idx,
+                err.compose(.Write, structIdx, idx),
             });
         },
         .Long => {
             try out.print(
-                \\if(SDL_RWwrite(out, src.{s}, 8, {d}) != {d}) {{
-                \\  return -{d};
+                \\ if(SDL_RWwrite(out, src.{s}, 8, {d}) != {d}) {{
+                \\  return {d};
                 \\ }}
                 \\
             , .{
                 field.name,
                 field.typ.arraySize.size,
                 field.typ.arraySize.size,
-                0x100 + idx,
+                err.compose(.Write, structIdx, idx),
             });
         },
         .Struct => {
@@ -156,58 +227,58 @@ fn writeStaticArrayField(namespace: []const u8, field: parse.Field, idx: usize, 
     }
 }
 
-fn writeDynArrayField(namespace: []const u8, field: parse.Field, idx: usize, out: anytype) !void {
+fn writeVarDynArray(namespace: []const u8, field: parse.Field, structIdx: usize, idx: usize, out: anytype) !void {
     switch (field.typ.datatype) {
         .Byte => {
             try out.print(
-                \\if(SDL_RWwrite(out, src.{s}, 1, src.{s}) != src.{s}) {{
-                \\  return -{d};
+                \\ if(SDL_RWwrite(out, src.{s}, 1, src.{s}) != src.{s}) {{
+                \\  return {d};
                 \\ }}
                 \\
             , .{
                 field.name,
                 field.typ.arraySize.ref,
                 field.typ.arraySize.ref,
-                0x100 + idx,
+                err.compose(.Write, structIdx, idx),
             });
         },
         .Short => {
             try out.print(
-                \\if(SDL_RWwrite(out, src.{s}, 2, src.{s}) != src.{s}) {{
-                \\  return -{d};
+                \\ if(SDL_RWwrite(out, src.{s}, 2, src.{s}) != src.{s}) {{
+                \\  return {d};
                 \\ }}
                 \\
             , .{
                 field.name,
                 field.typ.arraySize.ref,
                 field.typ.arraySize.ref,
-                0x100 + idx,
+                err.compose(.Write, structIdx, idx),
             });
         },
         .Int => {
             try out.print(
-                \\if(SDL_RWwrite(out, src.{s}, 4, src.{s}) != src.{s}) {{
-                \\  return -{d};
+                \\ if(SDL_RWwrite(out, src.{s}, 4, src.{s}) != src.{s}) {{
+                \\  return {d};
                 \\ }}
                 \\
             , .{
                 field.name,
                 field.typ.arraySize.ref,
                 field.typ.arraySize.ref,
-                0x100 + idx,
+                err.compose(.Write, structIdx, idx),
             });
         },
         .Long => {
             try out.print(
-                \\if(SDL_RWwrite(out, src.{s}, 8, src.{s}) != src.{s}) {{
-                \\  return -{d};
+                \\ if(SDL_RWwrite(out, src.{s}, 8, src.{s}) != src.{s}) {{
+                \\  return {d};
                 \\ }}
                 \\
             , .{
                 field.name,
                 field.typ.arraySize.ref,
                 field.typ.arraySize.ref,
-                0x100 + idx,
+                err.compose(.Write, structIdx, idx),
             });
         },
         .Struct => {
