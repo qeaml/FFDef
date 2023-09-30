@@ -415,13 +415,7 @@ const State = struct {
                     );
                 }
             } else {
-                diag.errWithTip(
-                    "Cannot constrain dynamic arrays.",
-                    .{},
-                    "If you want to infer the array size, use `bytes`.",
-                    .{},
-                    qualtype.pos,
-                );
+                diag.err("Cannot constrain dynamic arrays.", .{}, qualtype.pos);
                 return Error.ConstrainedDynamicArray;
             }
 

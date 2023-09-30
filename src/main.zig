@@ -11,24 +11,35 @@ pub fn main() !void {
     defer std.process.argsFree(allocator, args);
 
     if (args.len < 2) {
-        std.debug.print("Provide a filename", .{});
+        diag.errWithTip(
+            "Provide a path to file format definition file.",
+            .{},
+            "These files usually have a .ff extension.",
+            .{},
+            null,
+        );
         return;
     }
+
+    const filename = args[1];
+    const file = std.fs.cwd().openFile(filename, .{}) catch |e| {
+        diag.err("Could not open file '{s}': {?}", .{ filename, e }, null);
+        return;
+    };
+    defer file.close();
 
     var root = std.fs.cwd();
     if (args.len >= 3) {
         root.makeDir(args[2]) catch {};
         root = try root.openDir(args[2], .{});
+    } else {
+        if (std.fs.path.dirname(filename)) |path| {
+            root = try root.openDir(path, .{});
+        }
     }
 
-    const filename = args[1];
-    const file = std.fs.cwd().openFile(filename, .{}) catch |e| {
-        std.log.err("Could not open file '{s}': {?}", .{ filename, e });
-        return;
-    };
-    defer file.close();
     const source = file.reader().readAllAlloc(allocator, 102400) catch |e| {
-        std.log.err("Could not read file '{s}': {?}", .{ filename, e });
+        diag.err("Could not read file '{s}': {?}", .{ filename, e }, null);
         return;
     };
     defer allocator.free(source);

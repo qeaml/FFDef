@@ -35,6 +35,7 @@ fn show(
     location: ?lex.SourcePos,
 ) void {
     const stderr = std.io.getStdErr();
+    const tty = std.io.tty.detectConfig(stderr);
     const writer = stderr.writer();
     std.debug.getStderrMutex().lock();
     defer std.debug.getStderrMutex().unlock();
@@ -42,7 +43,9 @@ fn show(
     nosuspend writer.writeByte('\n') catch return;
 
     head(color, false, level, stderr);
+    tty.setColor(stderr, .bold) catch {};
     nosuspend writer.print(msgFmt ++ "\n", msgArg) catch return;
+    tty.setColor(stderr, .reset) catch {};
 
     if (tipFmt) |format| {
         head(color, true, level, stderr);
