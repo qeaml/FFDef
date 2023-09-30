@@ -6,26 +6,35 @@
 #define ff_errorNo(status) (-(status) >> 8)
 #define ff_errorField(status) (-(status) & 0xFF)
 
+#define AllocCopyStrAlt(data, len, string) \
+  len = sizeof(string) - 1;                \
+  data = malloc(sizeof(string));           \
+  memcpy(data, string, len)
+
 #define AllocCopyStr(target, string) \
-  target##Len = sizeof(string) - 1;  \
-  target = malloc(sizeof(string));   \
-  memcpy(target, string, sizeof(string))
+  AllocCopyStrAlt(target.data, target.len, string)
+
+#define StrFmtAlt(len, data) \
+  (int)(len), (int)(len), (data)
+
+#define StrFmt(string) \
+  StrFmtAlt(string.len, string.data)
 
 int main(int argc, char **argv) {
   (void)argc; (void)argv;
 
   contact c = contact_new();
 
-  AllocCopyStr(c.Name, "THE JOE");
-  AllocCopyStr(c.FirstName, "Joe");
-  AllocCopyStr(c.LastName, "Schmoe");
-  AllocCopyStr(c.Email, "joe@schmoe.co");
+  AllocCopyStrAlt(c.name, c.nameLen, "THE JOE");
+  AllocCopyStr(c.firstName, "Joe");
+  AllocCopyStr(c.lastName, "Schmoe");
+  AllocCopyStr(c.email, "joe@schmoe.co");
 
-  c.BirthdayDay = 13;
-  c.BirthdayMonth = 7;
-  c.BirthdayYear = 1996;
+  c.birthdayDay = 13;
+  c.birthdayMonth = 7;
+  c.birthdayYear = 1996;
 
-  c.PhoneNumber = 123456789;
+  c.phoneNumber = 123456789;
 
   SDL_RWops *file = SDL_RWFromFile("joe.contact", "wb");
   int status = contact_write(file, c);
@@ -33,10 +42,8 @@ int main(int argc, char **argv) {
   if(ff_isOK(status)) {
     printf("File write OK. (%d)\n", status);
     printf(": %*.*s '%*.*s' %*.*s <%*.*s>\n",
-      (int)(c.FirstNameLen), (int)(c.FirstNameLen), c.FirstName,
-      (int)(c.NameLen), (int)(c.NameLen), c.Name,
-      (int)(c.LastNameLen), (int)(c.LastNameLen), c.LastName,
-      (int)(c.EmailLen), (int)(c.EmailLen), c.Email);
+      StrFmt(c.firstName), StrFmtAlt(c.nameLen, c.name), StrFmt(c.lastName),
+      StrFmt(c.email));
     contact_free(&c);
   } else {
     printf("File write failed: %s\n", contact_formaterror(status));
@@ -50,10 +57,8 @@ int main(int argc, char **argv) {
   if(ff_isOK(status)) {
     printf("File read OK. (%d)\n", status);
     printf(": %*.*s '%*.*s' %*.*s <%*.*s>\n",
-      (int)(c.FirstNameLen), (int)(c.FirstNameLen), c.FirstName,
-      (int)(c.NameLen), (int)(c.NameLen), c.Name,
-      (int)(c.LastNameLen), (int)(c.LastNameLen), c.LastName,
-      (int)(c.EmailLen), (int)(c.EmailLen), c.Email);
+      StrFmt(c.firstName), StrFmtAlt(c.nameLen, c.name), StrFmt(c.lastName),
+      StrFmt(c.email));
   } else {
     printf("File read failed: %s\n", contact_formaterror(status));
   }

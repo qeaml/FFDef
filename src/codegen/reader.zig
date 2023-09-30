@@ -220,6 +220,7 @@ fn writeVarStaticArray(namespace: []const u8, field: parse.Field, structIdx: usi
 }
 
 fn writeVarDynArray(namespace: []const u8, field: parse.Field, structIdx: usize, idx: usize, out: anytype) !void {
+    // TODO: Do not write 0-sized arrays, they may be NULL
     switch (field.typ.datatype) {
         .Byte => {
             try out.print(

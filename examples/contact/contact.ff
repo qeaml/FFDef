@@ -1,28 +1,29 @@
 Format "Contact Info"
 Namespace "contact"
 
-"Magic" bytes = "CONTACT"
-"Version" byte = 1
+"magic" bytes = "CONTACT"
+"version" byte = 1
 
 # this is required as a display name
-"NameLen" byte != 0
-"Name" byte array("NameLen")
+"nameLen" byte != 0
+"name" byte array("nameLen")
+
+Struct "str" (
+  "len" byte
+  "data" byte array("len")
+)
 
 # first and last name are optional
-"FirstNameLen" byte
-"FirstName" byte array("FirstNameLen")
-
-"LastNameLen" byte
-"LastName" byte array("LastNameLen")
+"firstName" "str"
+"lastName" "str"
 
 # e-mail is also optional
-"EmailLen" byte
-"Email" byte array("EmailLen")
+"email" "str"
 
 # these are 1-indexed, so 0 on any of these means its unspecified
-"BirthdayDay" byte
-"BirthdayMonth" byte
-"BirthdayYear" word
+"birthdayDay" byte
+"birthdayMonth" byte
+"birthdayYear" word
 
 # 0 is considered unspecified
-"PhoneNumber" dword
+"phoneNumber" dword
