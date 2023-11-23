@@ -14,6 +14,10 @@ pub fn write(fmt: parse.Format, out: anytype) !void {
         \\Generated with FFDef v{d}.{d}.{d}
         \\*/
         \\
+        \\#ifdef __cplusplus
+        \\extern "C" {{
+        \\#endif
+        \\
         \\#include<string.h>
         \\#include<stdlib.h>
         \\#include<SDL2/SDL_RWops.h>
@@ -28,6 +32,10 @@ pub fn write(fmt: parse.Format, out: anytype) !void {
 
     try out.print(
         \\const char *{s}_formaterror(int error);
+        \\
+        \\#ifdef __cplusplus
+        \\}}
+        \\#endif
         \\
     , .{fmt.namespace});
 }
