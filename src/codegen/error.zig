@@ -4,27 +4,27 @@ const version = @import("../version.zig").current;
 
 pub fn write(fmt: parse.Format, out: anytype) !void {
     for (fmt.structs) |s| {
-        try writeStruct(s.name, s.fields, out);
+        try writeStruct(fmt.namespace, s.name, s.fields, out);
     }
 
-    try writeStruct(fmt.namespace, fmt.fields, out);
+    try writeStruct(null, fmt.namespace, fmt.fields, out);
 
     try out.print(
-        \\const char **struct_fields[] = {{
+        \\const char **{s}_struct_fields[] = {{
         \\ {s}_fields,
         \\
-    , .{fmt.namespace});
+    , .{ fmt.namespace, fmt.namespace });
 
     for (fmt.structs) |s| {
-        try out.print(" {s}_fields,\n", .{s.name});
+        try out.print(" {s}_{s}_fields,\n", .{ fmt.namespace, s.name });
     }
 
     try out.print(
         \\}};
-        \\const char *struct_names[] = {{
+        \\const char *{s}_struct_names[] = {{
         \\ "{s}",
         \\
-    , .{fmt.namespace});
+    , .{ fmt.namespace, fmt.namespace });
 
     for (fmt.structs) |s| {
         try out.print(" \"{s}\",\n", .{s.name});
@@ -32,11 +32,19 @@ pub fn write(fmt: parse.Format, out: anytype) !void {
 
     _ = try out.write("};\n");
 
-    try out.print(@embedFile("formaterror.c"), .{fmt.namespace});
+    try out.print(@embedFile("formaterror.c"), .{
+        fmt.namespace, fmt.namespace, fmt.namespace,
+        fmt.namespace, fmt.namespace, fmt.namespace,
+        fmt.namespace, fmt.namespace,
+    });
 }
 
-fn writeStruct(name: []const u8, fields: []parse.Field, out: anytype) !void {
-    try out.print("const char *{s}_fields[] = {{\n", .{name});
+fn writeStruct(namespace: ?[]const u8, name: []const u8, fields: []parse.Field, out: anytype) !void {
+    _ = try out.write("const char *");
+    if (namespace) |ns| {
+        try out.print("{s}_", .{ns});
+    }
+    try out.print("{s}_fields[] = {{\n", .{name});
     for (fields) |f| {
         try out.print(" \"{s}\",\n", .{f.name});
     }

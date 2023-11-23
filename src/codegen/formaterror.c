@@ -1,6 +1,6 @@
 #include<stdio.h>
-#define cBufferSz 5120
-char gBuffer[cBufferSz];
+#define BUFFER_SIZE 5120
+char {s}_errbuffer[BUFFER_SIZE];
 const char *{s}_formaterror(int error) {{
   if(error >= 0) {{
     return "(no error)";
@@ -21,11 +21,11 @@ const char *{s}_formaterror(int error) {{
     mainFormat = "Invalid value for field '%s' of '%s'.";
     break;
   default:
-    snprintf(gBuffer, cBufferSz, "(unkown error %u/%u/%u)",
+    snprintf({s}_errbuffer, BUFFER_SIZE, "(unkown error %u/%u/%u)",
       error_type, struct_idx, field_idx);
-    return gBuffer;
+    return {s}_errbuffer;
   }}
-  snprintf(gBuffer, cBufferSz, mainFormat,
-    struct_fields[struct_idx][field_idx], struct_names[struct_idx]);
-  return gBuffer;
+  snprintf({s}_errbuffer, BUFFER_SIZE, mainFormat,
+    {s}_struct_fields[struct_idx][field_idx], {s}_struct_names[struct_idx]);
+  return {s}_errbuffer;
 }}
