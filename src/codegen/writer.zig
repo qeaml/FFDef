@@ -103,7 +103,7 @@ fn writeConst(namespace: []const u8, field: parse.Field, structIdx: usize, idx: 
                 \\  return status;
                 \\ }}
                 \\
-            , .{ namespace, field.typ.structName.?, field.name });
+            , .{ namespace, field.typ.metaName.?, field.name });
         },
     }
 }
@@ -155,7 +155,7 @@ fn writeVar(namespace: []const u8, field: parse.Field, structIdx: usize, idx: us
                 \\  return status;
                 \\ }}
                 \\
-            , .{ namespace, field.typ.structName.?, field.name });
+            , .{ namespace, field.typ.metaName.?, field.name });
         },
     }
 }
@@ -221,7 +221,7 @@ fn writeVarStaticArray(namespace: []const u8, field: parse.Field, structIdx: usi
                     \\  return status;
                     \\ }}
                     \\ 
-                , .{ namespace, field.typ.structName.?, field.name, subidx });
+                , .{ namespace, field.typ.metaName.?, field.name, subidx });
             }
         },
     }
@@ -293,7 +293,7 @@ fn writeVarDynArray(namespace: []const u8, field: parse.Field, structIdx: usize,
             , .{
                 field.typ.arraySize.ref,
                 namespace,
-                field.typ.structName.?,
+                field.typ.metaName.?,
                 field.name,
             });
         },

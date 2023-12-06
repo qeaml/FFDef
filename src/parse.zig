@@ -20,9 +20,9 @@ pub const Error = error{
     InvalidArraySize, // array size must be greater than 1
     ArraySizeNotClosed, // expected ')' to close array extent
     ArrayOfArrays, // array of arrays not yet supported
-    ExpectedStructName, // expected name of struct
-    ExpectedStructFieldList, // expected list of struct fields
-    ExpectedStructField, // expected field in struct
+    ExpectedName, // expected name of struct
+    ExpectedFieldList, // expected list of struct fields
+    ExpectedField, // expected field in struct
     MismatchedArrayConstraintSize,
     ConstrainedDynamicArray,
 };
@@ -32,7 +32,7 @@ pub const Datatype = enum {
     Short,
     Int,
     Long,
-    Struct,
+    Meta,
 };
 
 pub const QualType = struct {
@@ -46,7 +46,7 @@ pub const QualType = struct {
         ref: []const u8,
         size: usize,
     } = .{ .size = 0 },
-    structName: ?[]const u8 = null,
+    metaName: ?[]const u8 = null,
 };
 
 pub const Constraint = struct {
@@ -71,12 +71,20 @@ pub const Struct = struct {
     fields: []Field,
 };
 
+pub const Enum = struct {
+    pos: lex.SourcePos,
+    name: []const u8,
+    datatype: Datatype,
+    fields: [][]const u8,
+};
+
 pub const Format = struct {
     name: []const u8,
     namespace: []const u8,
 
     fields: []Field,
     structs: []Struct,
+    enums: []Enum,
 
     allocator: std.mem.Allocator,
 
@@ -86,10 +94,19 @@ pub const Format = struct {
             self.allocator.free(s.fields);
         }
         self.allocator.free(self.structs);
+        for (self.enums) |e| {
+            self.allocator.free(e.fields);
+        }
+        self.allocator.free(self.enums);
     }
 };
 
 const State = struct {
+    const SymbolKind = enum {
+        Struct,
+        Enum,
+    };
+
     tokens: []lex.Token,
     offset: usize = 0,
 
@@ -98,6 +115,7 @@ const State = struct {
 
     fields: std.ArrayList(Field),
     structs: std.ArrayList(Struct),
+    enums: std.ArrayList(Enum),
 
     allocator: std.mem.Allocator,
 
@@ -106,6 +124,7 @@ const State = struct {
             .tokens = tokens,
             .fields = std.ArrayList(Field).init(allocator),
             .structs = std.ArrayList(Struct).init(allocator),
+            .enums = std.ArrayList(Enum).init(allocator),
             .allocator = allocator,
         };
     }
@@ -216,8 +235,8 @@ const State = struct {
                 },
             },
             .String => |s| {
-                qt.datatype = .Struct;
-                qt.structName = s;
+                qt.datatype = .Meta;
+                qt.metaName = s;
             },
             else => |d| {
                 diag.err("Expected a typename or a struct name, but found {?} instead.", .{d}, primTok.?.pos);
@@ -436,6 +455,7 @@ const State = struct {
             .Format => try self.parseFormatDirective(),
             .Namespace => try self.parseNamespaceDirective(),
             .Struct => try self.parseStructDirective(),
+            .Enum => try self.parseEnumDirective(),
         }
     }
 
@@ -483,31 +503,31 @@ const State = struct {
         const nameTok = self.gettok();
         if (nameTok == null) {
             diag.err("Expected string for struct name.", .{}, self.prevtok().pos);
-            return Error.ExpectedStructName;
+            return Error.ExpectedName;
         }
         const name = switch (nameTok.?.data) {
             .String => |s| s,
             else => |d| {
                 diag.err("Expected string for struct name, but got {?} instead.", .{d}, nameTok.?.pos);
-                return Error.ExpectedStructName;
+                return Error.ExpectedName;
             },
         };
 
         const leftParen = self.gettok();
         if (leftParen == null) {
             diag.err("Expected '(' to begin struct field list.", .{}, self.prevtok().pos);
-            return Error.ExpectedStructFieldList;
+            return Error.ExpectedFieldList;
         }
         switch (leftParen.?.data) {
             .Punctuator => |p| {
                 if (p != .LeftParen) {
                     diag.err("Expected '(' to begin struct field list, but found {?} insetead.", .{p}, leftParen.?.pos);
-                    return Error.ExpectedStructFieldList;
+                    return Error.ExpectedFieldList;
                 }
             },
             else => |d| {
                 diag.err("Expected '(' to begin struct field list, but found {?} instead.", .{d}, leftParen.?.pos);
-                return Error.ExpectedStructFieldList;
+                return Error.ExpectedFieldList;
             },
         }
 
@@ -517,7 +537,7 @@ const State = struct {
             const token = self.gettok();
             if (token == null) {
                 diag.err("Expected a field in structure.", .{}, self.prevtok().pos);
-                return Error.ExpectedStructField;
+                return Error.ExpectedField;
             }
             const fieldName = switch (token.?.data) {
                 .Punctuator => |p| {
@@ -537,6 +557,108 @@ const State = struct {
         }
 
         try self.structs.append(.{ .pos = nameTok.?.pos, .name = name, .fields = try fields.toOwnedSlice() });
+    }
+
+    fn parseEnumDirective(self: Self) !void {
+        const nameTok = self.gettok();
+        if (nameTok == null) {
+            diag.err(
+                "Expected string for enum name.",
+                .{},
+                self.prevtok().pos,
+            );
+            return Error.ExpectedName;
+        }
+        const name = switch (nameTok.?.data) {
+            .String => |s| s,
+            else => |d| {
+                diag.err(
+                    "Expected string for enum name, but got {?} instead.",
+                    .{d},
+                    nameTok.?.pos,
+                );
+                return Error.ExpectedName;
+            },
+        };
+
+        const datatypeTok = self.gettok();
+        if (datatypeTok == null) {
+            diag.err(
+                "Expected underlying enum type.",
+                .{},
+                self.prevtok().pos,
+            );
+            return Error.ExpectedTypename;
+        }
+        const datatype: Datatype = switch (datatypeTok.?.data) {
+            .Typename => |t| switch (t) {
+                .Byte => .Byte,
+                .Word => .Short,
+                .Dword => .Int,
+                .Qword => .Long,
+                else => {
+                    diag.err(
+                        "Underlying enum type must be an unsigned integer of any size, got {?}.",
+                        .{t},
+                        datatypeTok.?.pos,
+                    );
+                    return Error.ExpectedConstraintValue;
+                },
+            },
+            else => |d| {
+                diag.err(
+                    "Expected underlying enum type, but got {?} instead.",
+                    .{d},
+                    datatypeTok.?.pos,
+                );
+                return Error.ExpectedTypename;
+            },
+        };
+
+        const leftParen = self.gettok();
+        if (leftParen == null) {
+            diag.err("Expected '(' to begin enum field list.", .{}, self.prevtok().pos);
+            return Error.ExpectedFieldList;
+        }
+        switch (leftParen.?.data) {
+            .Punctuator => |p| {
+                if (p != .LeftParen) {
+                    diag.err("Expected '(' to begin enum field list, but found {?} insetead.", .{p}, leftParen.?.pos);
+                    return Error.ExpectedFieldList;
+                }
+            },
+            else => |d| {
+                diag.err("Expected '(' to begin enum field list, but found {?} instead.", .{d}, leftParen.?.pos);
+                return Error.ExpectedFieldList;
+            },
+        }
+
+        var fields = std.ArrayList([]const u8).init(self.allocator);
+        defer fields.deinit();
+        while (true) {
+            const token = self.gettok();
+            if (token == null) {
+                diag.err("Expected an enum field.", .{}, self.prevtok().pos);
+                return Error.ExpectedField;
+            }
+            const fieldName = switch (token.?.data) {
+                .Punctuator => |p| {
+                    if (p == .RightParen) {
+                        break;
+                    }
+                    diag.err("Expected enum field name, but found {?} instead.", .{p}, token.?.pos);
+                    return Error.ExpectedNameString;
+                },
+                .String => |s| s,
+                else => |d| {
+                    diag.err("Expected enum field name, but found {?} instead.", .{d}, token.?.pos);
+                    return Error.ExpectedNameString;
+                },
+            };
+            try fields.append(fieldName);
+        }
+
+        try self.enums.append(.{ .pos = nameTok.?.pos, .name = name, .datatype = datatype, .fields = try fields.toOwnedSlice() });
     }
 
     fn has(self: Self) bool {
@@ -583,6 +705,7 @@ pub fn all(allocator: std.mem.Allocator, filename: []const u8, source: []const u
         .namespace = state.namespace.?,
         .fields = try state.fields.toOwnedSlice(),
         .structs = try state.structs.toOwnedSlice(),
+        .enums = try state.enums.toOwnedSlice(),
         .allocator = allocator,
     };
 }
@@ -792,11 +915,60 @@ test "struct" {
 
     const name = format.fields[2];
     try std.testing.expectEqualStrings("Name", name.name);
-    try std.testing.expectEqual(Datatype.Struct, name.typ.datatype);
-    try std.testing.expectEqualStrings("RequiredString", name.typ.structName.?);
+    try std.testing.expectEqual(Datatype.Meta, name.typ.datatype);
+    try std.testing.expectEqualStrings("RequiredString", name.typ.metaName.?);
 
     const realname = format.fields[3];
     try std.testing.expectEqualStrings("RealName", realname.name);
-    try std.testing.expectEqual(Datatype.Struct, realname.typ.datatype);
-    try std.testing.expectEqualStrings("String", realname.typ.structName.?);
+    try std.testing.expectEqual(Datatype.Meta, realname.typ.datatype);
+    try std.testing.expectEqualStrings("String", realname.typ.metaName.?);
+}
+
+test "enum" {
+    const format = try all(std.testing.allocator, "test", @embedFile("tests/parse/enum.ff"));
+    defer format.deinit();
+
+    try std.testing.expectEqualStrings("test v7", format.name);
+    try std.testing.expectEqualStrings("test_v7", format.namespace);
+
+    try std.testing.expectEqual(@as(usize, 4), format.fields.len);
+    try std.testing.expectEqual(@as(usize, 2), format.enums.len);
+
+    const magic = format.fields[0];
+    try std.testing.expectEqualStrings("Magic", magic.name);
+    try std.testing.expectEqual(Datatype.Byte, magic.typ.datatype);
+    try std.testing.expect(magic.typ.isArray);
+    try std.testing.expect(magic.typ.arraySizeKnown);
+    try std.testing.expectEqual(@as(usize, 7), magic.typ.arraySize.size);
+    try std.testing.expect(magic.constraint != null);
+    try std.testing.expectEqual(lex.Operator.Equal, magic.constraint.?.op);
+    try std.testing.expectEqualStrings("TESTFIL", magic.constraint.?.val.str);
+
+    const version = format.fields[1];
+    try std.testing.expectEqualStrings("Version", version.name);
+    try std.testing.expectEqual(Datatype.Byte, version.typ.datatype);
+    try std.testing.expect(!version.typ.isArray);
+    try std.testing.expect(version.constraint != null);
+    try std.testing.expectEqual(lex.Operator.Equal, version.constraint.?.op);
+    try std.testing.expectEqual(@as(isize, 7), version.constraint.?.val.int);
+
+    const level = format.enums[0];
+    try std.testing.expectEqualStrings("user_level", level.name);
+    try std.testing.expectEqual(Datatype.Byte, level.datatype);
+    try std.testing.expectEqual(@as(usize, 4), level.fields.len);
+
+    const rep = format.enums[1];
+    try std.testing.expectEqualStrings("user_rep", rep.name);
+    try std.testing.expectEqual(Datatype.Short, rep.datatype);
+    try std.testing.expectEqual(@as(usize, 3), rep.fields.len);
+
+    const userLevel = format.fields[2];
+    try std.testing.expectEqualStrings("level", userLevel.name);
+    try std.testing.expectEqual(Datatype.Meta, userLevel.typ.datatype);
+    try std.testing.expectEqualStrings("user_level", userLevel.typ.metaName.?);
+
+    const userRep = format.fields[2];
+    try std.testing.expectEqualStrings("level", userRep.name);
+    try std.testing.expectEqual(Datatype.Meta, userRep.typ.datatype);
+    try std.testing.expectEqualStrings("user_level", userRep.typ.metaName.?);
 }

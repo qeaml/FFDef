@@ -33,7 +33,12 @@ pub const Operator = enum {
     }
 };
 
-pub const Directive = enum { Format, Namespace, Struct };
+pub const Directive = enum {
+    Format,
+    Namespace,
+    Struct,
+    Enum,
+};
 
 pub const Typename = enum {
     Byte,
@@ -256,6 +261,9 @@ const State = struct {
         if (std.mem.eql(u8, ident, "Struct")) {
             return .{ .pos = pos, .data = .{ .Directive = .Struct } };
         }
+        if (std.mem.eql(u8, ident, "Enum")) {
+            return .{ .pos = pos, .data = .{ .Directive = .Enum } };
+        }
         if (std.mem.eql(u8, ident, "byte")) {
             return .{ .pos = pos, .data = .{ .Typename = .Byte } };
         }
@@ -391,6 +399,7 @@ const identifiers = [_][]const u8{
     "Format",
     "Namespace",
     "Struct",
+    "Enum",
     "byte",
     "bytes",
     "char",

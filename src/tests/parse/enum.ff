@@ -1,0 +1,21 @@
+Format "test v7"
+Namespace "test_v7"
+
+"Magic" bytes = "TESTFIL"
+"Version" byte = 7
+
+Enum "user_level" byte (
+  "banned"
+  "user"
+  "mod"
+  "admin"
+)
+
+Enum "user_rep" word (
+  "neg"
+  "neu"
+  "pos"
+)
+
+"level" "user_level"
+"rep" "user_rep"

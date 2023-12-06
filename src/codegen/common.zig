@@ -6,7 +6,7 @@ pub fn writeFieldDecl(namespace: []const u8, f: parse.Field, out: anytype, compt
         .Short => try out.print("{s}signed short ", .{if (f.typ.isSigned) "" else "un"}),
         .Int => try out.print("{s}signed int ", .{if (f.typ.isSigned) "" else "un"}),
         .Long => try out.print("{s}signed long long ", .{if (f.typ.isSigned) "" else "un"}),
-        .Struct => try out.print("{s}_{s} ", .{ namespace, f.typ.structName.? }),
+        .Meta => try out.print("{s}_{s} ", .{ namespace, f.typ.metaName.? }),
     }
 
     if (f.typ.isArray and !f.typ.arraySizeKnown) {
